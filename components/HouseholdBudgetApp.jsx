@@ -1667,6 +1667,22 @@ function CategoriesView({ household, update, sessionPassword, onRename }) {
       <p style={{ ...fontBody, color: COLORS.inkSoft, margin: "0 0 24px", fontSize: 14 }}>Pick from suggestions or add your own — anytime.</p>
       <AccountPanel household={household} sessionPassword={sessionPassword} onRename={onRename} />
       <Card style={{ marginBottom: 20 }}>
+        <h3 style={{ ...fontDisplay, fontSize: 17, margin: "0 0 4px", color: COLORS.ink }}>Starting balance</h3>
+        <p style={{ ...fontBody, fontSize: 13, color: COLORS.inkSoft, margin: "0 0 12px" }}>
+          Your account balance on the day you started tracking — everything else builds from here. Adjust it if it was off, or your situation changed.
+        </p>
+        <div style={{ position: "relative", maxWidth: 220 }}>
+          <span style={{ position: "absolute", left: 14, top: 12, ...fontBody, fontSize: 15, color: COLORS.inkSoft }}>{CURRENCY_SYMBOL}</span>
+          <input
+            type="number" onFocus={e => e.target.select()}
+            value={household.startingBalance ?? 0}
+            onChange={e => update(h => ({ ...h, startingBalance: Number(e.target.value) || 0 }))}
+            placeholder="0"
+            style={{ ...fontBody, width: "100%", padding: "10px 14px 10px 30px", borderRadius: 10, border: `1.5px solid ${COLORS.border}`, fontSize: 15, outline: "none", boxSizing: "border-box" }}
+          />
+        </div>
+      </Card>
+      <Card style={{ marginBottom: 20 }}>
         <h3 style={{ ...fontDisplay, fontSize: 17, margin: "0 0 4px", color: COLORS.ink }}>Appearance</h3>
         <p style={{ ...fontBody, fontSize: 13, color: COLORS.inkSoft, margin: "0 0 4px" }}>Change the app's colors whenever you like.</p>
         <ThemePicker theme={household.theme || THEMES[0]} setTheme={(t) => update(h => ({ ...h, theme: t }))} />
