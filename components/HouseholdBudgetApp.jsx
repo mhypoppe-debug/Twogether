@@ -6,7 +6,8 @@ import {
 } from "recharts";
 import {
   Home, Wallet, PiggyBank, Receipt, Tags, ChevronRight, ChevronLeft,
-  Plus, X, Check, Users, TrendingUp, TrendingDown, Sparkles, Lock
+  Plus, X, Check, Users, TrendingUp, TrendingDown, Sparkles, Lock,
+  UserPlus, Pencil
 } from "lucide-react";
 
 /* ============================================================
@@ -1454,7 +1455,107 @@ function ReservesView({ household, update, selectedMonth, setSelectedMonth }) {
    ============================================================ */
 const ICON_CHOICES = ["💰","💵","🏠","🚗","🍔","🛒","🎬","✈️","💊","🎁","⚡","📱","🏥","🎓","❤️","🐶","👶","☕","🧾","💼","📈","🛡️","🔧","🎉"];
 
-function CategoriesView({ household, update }) {
+function AccountPanel({ household, sessionPassword, onRename }) {
+  const [newId, setNewId] = useState(household.code || "");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  const inviteLink = buildInviteLink(household.code, sessionPassword);
+
+  const copyLink = () => {
+    navigator.clipboard?.writeText(inviteLink);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const submitRename = async () => {
+    setMessage(""); setBusy(true);
+    try {
+      await onRename(newId, confirmPassword);
+      setMessage("✅ Your login id has been updated.");
+      setConfirmPassword("");
+    } catch (e) {
+      setMessage("❌ " + (e?.message || "Couldn't update your login id."));
+    }
+    setBusy(false);
+  };
+
+  return (
+    <Card style={{ marginBottom: 20 }}>
+      <h3 style={{ ...fontDisplay, fontSize: 17, margin: "0 0 4px", color: COLORS.ink }}>Account</h3>
+      <p style={{ ...fontBody, fontSize: 13, color: COLORS.inkSoft, margin: "0 0 16px" }}>
+        Manage your login id and invite your partner.
+      </p>
+
+      <div style={{ marginBottom: 20 }}>
+        <p style={{ ...fontBody, fontSize: 13, fontWeight: 700, color: COLORS.ink, margin: "0 0 8px", display: "flex", alignItems: "center", gap: 6 }}>
+          <UserPlus size={14} /> Invite your partner
+        </p>
+        {inviteLink ? (
+          <>
+            <p style={{ ...fontBody, fontSize: 12, color: COLORS.inkSoft, margin: "0 0 8px" }}>
+              Anyone who opens this link is logged straight in — no separate account needed.
+            </p>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                readOnly value={inviteLink}
+                style={{ ...fontBody, flex: 1, minWidth: 0, padding: "9px 12px", borderRadius: 8, border: `1.5px solid ${COLORS.border}`, fontSize: 12, background: COLORS.lavender, boxSizing: "border-box" }}
+                onFocus={e => e.target.select()}
+              />
+              <button
+                onClick={copyLink}
+                style={{ ...fontBody, background: COLORS.primary, color: "#fff", border: "none", borderRadius: 8, padding: "0 14px", fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}
+              >
+                {copied ? "Copied!" : "Copy"}
+              </button>
+            </div>
+          </>
+        ) : (
+          <p style={{ ...fontBody, fontSize: 12, color: COLORS.inkSoft, margin: 0 }}>
+            Log out and log back in normally (instead of from a restored backup) to generate an invite link.
+          </p>
+        )}
+      </div>
+
+      <div style={{ borderTop: `1px solid ${COLORS.border}`, paddingTop: 18 }}>
+        <p style={{ ...fontBody, fontSize: 13, fontWeight: 700, color: COLORS.ink, margin: "0 0 8px", display: "flex", alignItems: "center", gap: 6 }}>
+          <Pencil size={14} /> Change your login id
+        </p>
+        <p style={{ ...fontBody, fontSize: 12, color: COLORS.inkSoft, margin: "0 0 10px" }}>
+          Currently <code style={{ background: COLORS.lavender, padding: "2px 6px", borderRadius: 4 }}>{household.code}</code>. Changing it means you'll both need the new id to log in from now on.
+        </p>
+        <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+          <input
+            value={newId} onChange={e => setNewId(e.target.value)}
+            placeholder="New login id"
+            style={{ ...fontBody, flex: "1 1 160px", padding: "9px 12px", borderRadius: 8, border: `1.5px solid ${COLORS.border}`, fontSize: 13, outline: "none" }}
+          />
+          <input
+            type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)}
+            placeholder="Current password"
+            style={{ ...fontBody, flex: "1 1 160px", padding: "9px 12px", borderRadius: 8, border: `1.5px solid ${COLORS.border}`, fontSize: 13, outline: "none" }}
+          />
+          <button
+            onClick={submitRename}
+            disabled={busy || !newId.trim() || !confirmPassword}
+            style={{ ...fontBody, background: COLORS.primary, color: "#fff", border: "none", borderRadius: 8, padding: "0 14px", fontWeight: 700, cursor: "pointer", opacity: (busy || !newId.trim() || !confirmPassword) ? 0.6 : 1 }}
+          >
+            {busy ? "Saving…" : "Save"}
+          </button>
+        </div>
+        {message && (
+          <p style={{ ...fontBody, fontSize: 12, margin: 0, color: message.startsWith("✅") ? COLORS.success : COLORS.alert }}>
+            {message}
+          </p>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+function CategoriesView({ household, update, sessionPassword, onRename }) {
   const addCat = (type, name, icon) => {
     if (!name.trim() || household.categories[type].includes(name.trim())) return;
     update(h => ({
@@ -1564,6 +1665,7 @@ function CategoriesView({ household, update }) {
     <div className="page-content" style={{ flex: 1 }}>
       <h1 style={{ ...fontDisplay, fontSize: 30, color: COLORS.ink, margin: "0 0 4px" }}>Categories & Settings</h1>
       <p style={{ ...fontBody, color: COLORS.inkSoft, margin: "0 0 24px", fontSize: 14 }}>Pick from suggestions or add your own — anytime.</p>
+      <AccountPanel household={household} sessionPassword={sessionPassword} onRename={onRename} />
       <Card style={{ marginBottom: 20 }}>
         <h3 style={{ ...fontDisplay, fontSize: 17, margin: "0 0 4px", color: COLORS.ink }}>Appearance</h3>
         <p style={{ ...fontBody, fontSize: 13, color: COLORS.inkSoft, margin: "0 0 4px" }}>Change the app's colors whenever you like.</p>
@@ -1699,6 +1801,38 @@ async function loadHouseholdRecord(id, plainPassword) {
   } catch (e) {
     return null;
   }
+}
+
+async function renameHouseholdRecord(id, plainPassword, newId) {
+  const { id: updatedId } = await apiCall("/api/household/rename", { id, password: plainPassword, newId });
+  return updatedId;
+}
+
+// UTF-8-safe base64 helpers, so accented characters in a password don't break btoa/atob.
+function utf8ToBase64(str) {
+  return btoa(unescape(encodeURIComponent(str)));
+}
+function base64ToUtf8(str) {
+  return decodeURIComponent(escape(atob(str)));
+}
+
+// Invite links carry the id+password in the URL fragment (never sent to the server or logged)
+// so a partner can click the link and land straight in the app, logged in.
+function buildInviteLink(id, password) {
+  if (typeof window === "undefined" || !id || !password) return "";
+  const payload = utf8ToBase64(JSON.stringify({ id, password }));
+  return `${window.location.origin}${window.location.pathname}#invite=${payload}`;
+}
+
+function parseInviteFromHash() {
+  if (typeof window === "undefined") return null;
+  const match = window.location.hash.match(/#invite=([^&]+)/);
+  if (!match) return null;
+  try {
+    const decoded = JSON.parse(base64ToUtf8(decodeURIComponent(match[1])));
+    if (decoded?.id && decoded?.password) return decoded;
+  } catch {}
+  return null;
 }
 
 const SESSION_KEY = "twogether_session"; // { id, password } — stored locally so you stay logged in
@@ -1899,6 +2033,19 @@ export default function HouseholdBudgetApp() {
   // have to log in again every time you open the site.
   useEffect(() => {
     (async () => {
+      const invite = parseInviteFromHash();
+      if (invite) {
+        // Strip the credentials out of the URL/history right away, whether or not login succeeds.
+        window.history.replaceState(null, "", window.location.pathname + window.location.search);
+        const h = await loadHouseholdRecord(invite.id, invite.password);
+        if (h) {
+          setHousehold({ ...h, code: invite.id });
+          setSessionPassword(invite.password);
+          try { localStorage.setItem(SESSION_KEY, JSON.stringify({ id: invite.id, password: invite.password })); } catch {}
+          setScreen("app");
+          return;
+        }
+      }
       let saved = null;
       try { saved = JSON.parse(localStorage.getItem(SESSION_KEY) || "null"); } catch {}
       if (saved?.id && saved?.password) {
@@ -1990,6 +2137,13 @@ export default function HouseholdBudgetApp() {
       console.error("Join failed:", e);
       return false;
     }
+  };
+
+  const handleRename = async (newId, currentPassword) => {
+    const updatedId = await renameHouseholdRecord(household.code, currentPassword, newId);
+    setHousehold(h => ({ ...h, code: updatedId }));
+    rememberSession(updatedId, sessionPassword);
+    return updatedId;
   };
 
   const handleLogout = () => {
@@ -2114,7 +2268,7 @@ export default function HouseholdBudgetApp() {
             {view === "income" && <IncomeView household={household} update={update} selectedMonth={selectedMonth} />}
             {view === "expenses" && <ExpensesView household={household} update={update} selectedMonth={selectedMonth} />}
             {view === "reserves" && <ReservesView household={household} update={update} selectedMonth={selectedMonth} />}
-            {view === "categories" && <CategoriesView household={household} update={update} />}
+            {view === "categories" && <CategoriesView household={household} update={update} sessionPassword={sessionPassword} onRename={handleRename} />}
           </div>
         </div>
       </div>
