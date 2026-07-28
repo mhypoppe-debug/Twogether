@@ -1426,7 +1426,7 @@ function ReserveGoalCard({ cat, icon, savedYtd, goal, releasedIdx, monthly, sele
             </div>
           ) : (
             <p style={{ ...fontBody, fontSize: 12, color: COLORS.inkSoft, marginBottom: 12 }}>
-              Set a goal amount and date on the left to see a suggested monthly amount.
+              No goal set — that's fine, this can just be an open-ended pot. Add a goal amount and date on the left anytime if you want a suggested monthly amount.
             </p>
           )}
 
