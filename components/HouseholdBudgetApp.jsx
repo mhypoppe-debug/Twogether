@@ -142,6 +142,8 @@ function emptyHousehold() {
     actual: { income: {}, expense: {}, reserve: {} },
     transactions: [], // { id, month, type, category, amount, note }
     releasedThrough: {}, // { reserveCatName: monthIdx | null }
+    releasedAmount: {}, // { reserveCatName: amount actually paid, when it differs from what was saved }
+    archivedReserves: [], // [reserveCatName] — settled goals tucked out of the active list
     reserveGoals: {}, // { reserveCatName: { targetAmount, targetDate: "YYYY-MM-DD" } }
     sameEveryMonth: { income: {}, expense: {} }, // { catName: bool } — planned value applies to all 12 months
     copyActualFromExpected: { income: {} }, // { catName: bool } — actual income mirrors the planned amount
@@ -636,7 +638,11 @@ function computeKpis(h, monthIdx) {
     const releasedIdx = h.releasedThrough[cat];
     const saved = arr.slice(0, monthIdx + 1).reduce((a, b) => a + b, 0);
     if (releasedIdx !== null && releasedIdx !== undefined) {
-      const accrued = arr.slice(0, Math.min(releasedIdx, monthIdx) + 1).reduce((a, b) => a + b, 0);
+      const savedThroughRelease = arr.slice(0, Math.min(releasedIdx, monthIdx) + 1).reduce((a, b) => a + b, 0);
+      // releasedAmount is what was actually paid, which can differ from what was saved
+      // (e.g. you chose to keep the leftover saved instead of freeing it up).
+      const paidAmount = h.releasedAmount?.[cat];
+      const accrued = paidAmount != null ? Math.min(paidAmount, savedThroughRelease) : savedThroughRelease;
       accruedYtd += accrued;
       reservedTotal += Math.max(0, saved - accrued);
     } else {
@@ -1245,8 +1251,87 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
 /* ============================================================
    RESERVES VIEW  (the signature feature)
    ============================================================ */
-function ReserveGoalCard({ cat, icon, savedYtd, goal, releasedIdx, monthly, selectedMonth, onGoalChange, onMonthlyChange, onRelease, onDelete }) {
+function SettleReserveFlow({ savedYtd, onCancel, onSettle }) {
+  const [paidAmount, setPaidAmount] = useState(String(savedYtd));
+  const [step, setStep] = useState("amount"); // "amount" | "leftover" | "followup"
+  const [leftoverAction, setLeftoverAction] = useState(null); // "free" | "carry"
+
+  const paid = Number(paidAmount) || 0;
+  const diff = Math.round((paid - savedYtd) * 100) / 100;
+
+  const confirmAmount = () => setStep(diff < 0 ? "leftover" : "followup");
+  const chooseLeftover = (action) => { setLeftoverAction(action); setStep("followup"); };
+  const finish = (postAction) => onSettle({ paidAmount: paid, leftoverAction, postAction });
+
+  const stepButton = (onClick, label, filled) => (
+    <button
+      onClick={onClick}
+      style={{
+        ...fontBody, flex: "1 1 130px", borderRadius: 8, padding: "8px 10px", fontWeight: 700, fontSize: 12, cursor: "pointer",
+        background: filled ? COLORS.primary : "#fff", color: filled ? "#fff" : COLORS.primary, border: `1.5px solid ${COLORS.primary}`,
+      }}
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <div style={{ background: COLORS.lavender, borderRadius: 10, padding: 14, marginTop: 4 }}>
+      {step === "amount" && (
+        <>
+          <p style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: COLORS.ink, margin: "0 0 6px" }}>
+            You'd saved {fmt(savedYtd)} for this. What was actually paid?
+          </p>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              type="number" autoFocus onFocus={e => e.target.select()}
+              value={paidAmount} onChange={e => setPaidAmount(e.target.value)}
+              style={{ ...fontBody, flex: 1, padding: "8px 10px", borderRadius: 8, border: `1.5px solid ${COLORS.primary}`, fontSize: 14, outline: "none" }}
+            />
+            {stepButton(confirmAmount, "Continue", true)}
+            <button onClick={onCancel} style={{ ...fontBody, background: "none", border: "none", color: COLORS.inkSoft, cursor: "pointer", fontSize: 12 }}>
+              Cancel
+            </button>
+          </div>
+          {diff > 0 && (
+            <p style={{ ...fontBody, fontSize: 11, color: COLORS.inkSoft, margin: "6px 0 0" }}>
+              That's {fmt(diff)} more than you'd saved — we'll add it to this month.
+            </p>
+          )}
+        </>
+      )}
+
+      {step === "leftover" && (
+        <>
+          <p style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: COLORS.ink, margin: "0 0 8px" }}>
+            You have {fmt(-diff)} left over. What do you want to do with it?
+          </p>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {stepButton(() => chooseLeftover("free"), "Free it up to spend", true)}
+            {stepButton(() => chooseLeftover("carry"), "Keep saving it forward", false)}
+          </div>
+        </>
+      )}
+
+      {step === "followup" && (
+        <>
+          <p style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: COLORS.ink, margin: "0 0 8px" }}>
+            Settled. What should happen to this goal now?
+          </p>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {stepButton(() => finish("keep"), "Keep it closed", true)}
+            {stepButton(() => finish("archive"), "Archive it", false)}
+            {stepButton(() => finish("reopen"), "Start saving again", false)}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function ReserveGoalCard({ cat, icon, savedYtd, goal, releasedIdx, monthly, selectedMonth, onGoalChange, onMonthlyChange, onRelease, onSettle, onDelete }) {
   const isReleased = releasedIdx !== null && releasedIdx !== undefined;
+  const [settling, setSettling] = useState(false);
   const target = Number(goal?.targetAmount) || 0;
   const remainingMonths = monthsRemainingInclusive(goal?.targetDate, selectedMonth);
   // Base the suggestion on what was saved BEFORE this month, so this month's own
@@ -1354,15 +1439,33 @@ function ReserveGoalCard({ cat, icon, savedYtd, goal, releasedIdx, monthly, sele
             style={{ ...fontBody, width: "100%", boxSizing: "border-box", padding: "8px 10px", borderRadius: 8, border: `1.5px solid ${COLORS.primary}`, fontSize: 14, outline: "none", marginBottom: 10 }}
           />
 
-          <button
-            onClick={onRelease}
-            style={{
-              ...fontBody, width: "100%", padding: "8px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer",
-              border: `1.5px solid ${COLORS.primary}`, background: isReleased ? "#fff" : COLORS.primary, color: isReleased ? COLORS.primary : "#fff",
-            }}
-          >
-            {isReleased ? "Mark as not yet paid" : "Mark as paid — release this reserve"}
-          </button>
+          {isReleased ? (
+            <button
+              onClick={onRelease}
+              style={{
+                ...fontBody, width: "100%", padding: "8px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer",
+                border: `1.5px solid ${COLORS.primary}`, background: "#fff", color: COLORS.primary,
+              }}
+            >
+              Mark as not yet paid
+            </button>
+          ) : settling ? (
+            <SettleReserveFlow
+              savedYtd={savedYtd}
+              onCancel={() => setSettling(false)}
+              onSettle={(payload) => { onSettle(payload); setSettling(false); }}
+            />
+          ) : (
+            <button
+              onClick={() => setSettling(true)}
+              style={{
+                ...fontBody, width: "100%", padding: "8px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer",
+                border: `1.5px solid ${COLORS.primary}`, background: COLORS.primary, color: "#fff",
+              }}
+            >
+              Mark as paid — settle this reserve
+            </button>
+          )}
         </div>
       </div>
     </Card>
@@ -1384,7 +1487,43 @@ function ReservesView({ household, update, selectedMonth, setSelectedMonth }) {
     update(h => ({
       ...h,
       releasedThrough: { ...h.releasedThrough, [cat]: h.releasedThrough[cat] == null ? selectedMonth : null },
+      releasedAmount: { ...h.releasedAmount, [cat]: null },
     }));
+  };
+  const settleReserve = (cat, { paidAmount, leftoverAction, postAction }) => {
+    update(h => {
+      const arr = [...(h.actual.reserve[cat] || zeros())];
+      const savedThroughSelected = arr.slice(0, selectedMonth + 1).reduce((a, b) => a + b, 0);
+      let releasedAmount = paidAmount;
+
+      if (leftoverAction === "free") {
+        // You saved more than was paid and want the leftover free to spend now —
+        // trim it off this month's entry so the numbers match reality.
+        arr[selectedMonth] = (arr[selectedMonth] || 0) - (savedThroughSelected - paidAmount);
+      } else if (leftoverAction === "carry") {
+        // Keep the leftover saved as a head start on the next round — don't touch
+        // the numbers, just record that only `paidAmount` of it was actually spent.
+      } else if (paidAmount > savedThroughSelected) {
+        // Paid more than you'd saved — draw the extra from this month.
+        arr[selectedMonth] = (arr[selectedMonth] || 0) + (paidAmount - savedThroughSelected);
+      }
+
+      const reopening = postAction === "reopen";
+      const archivedReserves = postAction === "archive"
+        ? [...new Set([...(h.archivedReserves || []), cat])]
+        : (h.archivedReserves || []).filter(c => c !== cat);
+
+      return {
+        ...h,
+        actual: { ...h.actual, reserve: { ...h.actual.reserve, [cat]: arr } },
+        releasedThrough: { ...h.releasedThrough, [cat]: reopening ? null : selectedMonth },
+        releasedAmount: { ...h.releasedAmount, [cat]: reopening ? null : releasedAmount },
+        archivedReserves,
+      };
+    });
+  };
+  const restoreReserve = (cat) => {
+    update(h => ({ ...h, archivedReserves: (h.archivedReserves || []).filter(c => c !== cat) }));
   };
   const deleteReserve = (cat) => {
     update(h => {
@@ -1393,6 +1532,7 @@ function ReservesView({ household, update, selectedMonth, setSelectedMonth }) {
       const actual = { ...h.actual.reserve }; delete actual[cat];
       const icons = { ...h.categoryIcons.reserve }; delete icons[cat];
       const released = { ...h.releasedThrough }; delete released[cat];
+      const releasedAmt = { ...h.releasedAmount }; delete releasedAmt[cat];
       const goals = { ...h.reserveGoals }; delete goals[cat];
       return {
         ...h,
@@ -1401,6 +1541,8 @@ function ReservesView({ household, update, selectedMonth, setSelectedMonth }) {
         actual: { ...h.actual, reserve: actual },
         categoryIcons: { ...h.categoryIcons, reserve: icons },
         releasedThrough: released,
+        releasedAmount: releasedAmt,
+        archivedReserves: (h.archivedReserves || []).filter(c => c !== cat),
         reserveGoals: goals,
         // Nothing else needs to change: since this category no longer exists,
         // it drops out of the "reserved" total automatically — any money
@@ -1424,26 +1566,48 @@ function ReservesView({ household, update, selectedMonth, setSelectedMonth }) {
         </Card>
       ) : (
         <div style={{ marginTop: 20 }}>
-          {household.categories.reserve.map(cat => {
-            const arr = household.actual.reserve[cat] || zeros();
-            const savedYtd = arr.slice(0, selectedMonth + 1).reduce((a, b) => a + b, 0);
-            return (
-              <ReserveGoalCard
-                key={cat}
-                cat={cat}
-                icon={household.categoryIcons?.reserve?.[cat]}
-                savedYtd={savedYtd}
-                goal={household.reserveGoals?.[cat] || { targetAmount: 0, targetDate: "" }}
-                releasedIdx={household.releasedThrough[cat]}
-                monthly={arr[selectedMonth]}
-                selectedMonth={selectedMonth}
-                onGoalChange={(g) => setGoal(cat, g)}
-                onMonthlyChange={(v) => setMonthly(cat, v)}
-                onRelease={() => toggleRelease(cat)}
-                onDelete={() => deleteReserve(cat)}
-              />
-            );
-          })}
+          {household.categories.reserve
+            .filter(cat => !(household.archivedReserves || []).includes(cat))
+            .map(cat => {
+              const arr = household.actual.reserve[cat] || zeros();
+              const savedYtd = arr.slice(0, selectedMonth + 1).reduce((a, b) => a + b, 0);
+              return (
+                <ReserveGoalCard
+                  key={cat}
+                  cat={cat}
+                  icon={household.categoryIcons?.reserve?.[cat]}
+                  savedYtd={savedYtd}
+                  goal={household.reserveGoals?.[cat] || { targetAmount: 0, targetDate: "" }}
+                  releasedIdx={household.releasedThrough[cat]}
+                  monthly={arr[selectedMonth]}
+                  selectedMonth={selectedMonth}
+                  onGoalChange={(g) => setGoal(cat, g)}
+                  onMonthlyChange={(v) => setMonthly(cat, v)}
+                  onRelease={() => toggleRelease(cat)}
+                  onSettle={(payload) => settleReserve(cat, payload)}
+                  onDelete={() => deleteReserve(cat)}
+                />
+              );
+            })}
+
+          {(household.archivedReserves || []).length > 0 && (
+            <Card style={{ marginTop: 8 }}>
+              <h4 style={{ ...fontDisplay, fontSize: 15, margin: "0 0 10px", color: COLORS.inkSoft }}>Archived</h4>
+              {household.archivedReserves.map(cat => (
+                <div key={cat} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderTop: `1px solid ${COLORS.border}` }}>
+                  <span style={{ ...fontBody, fontSize: 13, color: COLORS.ink }}>
+                    {household.categoryIcons?.reserve?.[cat] && <span>{household.categoryIcons.reserve[cat]} </span>}{cat}
+                  </span>
+                  <button
+                    onClick={() => restoreReserve(cat)}
+                    style={{ ...fontBody, background: "none", border: "none", color: COLORS.primary, cursor: "pointer", fontSize: 12, fontWeight: 700 }}
+                  >
+                    Restore
+                  </button>
+                </div>
+              ))}
+            </Card>
+          )}
         </div>
       )}
     </div>
@@ -1566,6 +1730,7 @@ function CategoriesView({ household, update, sessionPassword, onRename }) {
       categoryIcons: { ...h.categoryIcons, [type]: { ...h.categoryIcons[type], [name.trim()]: icon || null } },
       ...(type === "reserve" ? {
         releasedThrough: { ...h.releasedThrough, [name.trim()]: null },
+        releasedAmount: { ...h.releasedAmount, [name.trim()]: null },
         reserveGoals: { ...h.reserveGoals, [name.trim()]: { targetAmount: 0, targetDate: "" } },
       } : {}),
       ...(type === "income" ? {
