@@ -562,7 +562,7 @@ function Sidebar({ view, setView, household, onLogout, saveStatus }) {
     { key: "income", label: "Income", icon: Wallet },
     { key: "expenses", label: "Expenses", icon: Receipt },
     { key: "reserves", label: "Reserves", icon: PiggyBank },
-    { key: "categories", label: "Categories", icon: Tags },
+    { key: "categories", label: "Settings", icon: Tags },
   ];
   const statusText = { saving: "Saving…", saved: "✓ Saved", error: "⚠ Save failed" }[saveStatus] || "";
   return (
