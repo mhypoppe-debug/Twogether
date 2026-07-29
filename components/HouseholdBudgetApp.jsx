@@ -5,9 +5,9 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from "recharts";
 import {
-  Home, Wallet, PiggyBank, Receipt, Tags, ChevronRight, ChevronLeft,
+  Home, Wallet, PiggyBank, Receipt, ChevronRight, ChevronLeft,
   Plus, X, Check, Users, TrendingUp, TrendingDown, Sparkles, Lock,
-  UserPlus, Pencil, GripVertical
+  UserPlus, Pencil, GripVertical, Settings as SettingsIcon
 } from "lucide-react";
 
 /* ============================================================
@@ -584,7 +584,7 @@ function Sidebar({ view, setView, household, onLogout, saveStatus }) {
     { key: "income", label: "Income", icon: Wallet },
     { key: "expenses", label: "Expenses", icon: Receipt },
     { key: "reserves", label: "Reserves", icon: PiggyBank },
-    { key: "categories", label: "Settings", icon: Tags },
+    { key: "categories", label: "Settings", icon: SettingsIcon },
   ];
   const statusText = { saving: "Saving…", saved: "✓ Saved", error: "⚠ Save failed" }[saveStatus] || "";
   return (
