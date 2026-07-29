@@ -1776,72 +1776,69 @@ function ReservesView({ household, update, selectedMonth, setSelectedMonth }) {
    DEBT VIEW
    ============================================================ */
 // Builds a payoff schedule: each period, interest accrues on the remaining balance
-// (annual rate ÷ payments per year). If paymentIncludesInterest, the payment is fixed
-// and interest comes out of it first (standard amortization); otherwise the payment is
-// pure principal and interest is extra, added on top. `extraPayments` are one-off top-ups
-// for specific payment numbers (e.g. "pay an extra €200 on payment #3") that don't change
-// the regular payment amount going forward. Capped at 600 periods (50 years) so a
-// too-small payment can't loop forever.
-function buildDebtSchedule(currentAmount, interestRate, paymentFrequency, paymentAmount, paymentIncludesInterest, extraPayments = []) {
+// (annual rate ÷ payments per year). If paymentIncludesInterest, the regular payment is
+// fixed and interest comes out of it first (standard amortization); otherwise the regular
+// payment is pure principal and interest is extra, added on top. `paymentOverrides` lets
+// specific payment numbers use a different total amount that period (e.g. paid extra, or
+// skipped) without changing the regular payment going forward — an override always means
+// "this is the total amount paid that period," regardless of the inclusive/exclusive mode.
+// Capped at 600 periods (50 years) so a too-small payment can't loop forever.
+function buildDebtSchedule(currentAmount, interestRate, paymentFrequency, paymentAmount, paymentIncludesInterest, paymentOverrides = {}) {
   const freq = DEBT_FREQUENCIES.find(f => f.key === paymentFrequency) || DEBT_FREQUENCIES[0];
   const periodRate = (Number(interestRate) || 0) / 100 / freq.perYear;
   let balance = Number(currentAmount) || 0;
-  const payment = Number(paymentAmount) || 0;
+  const basePayment = Number(paymentAmount) || 0;
   const rows = [];
-  if (balance <= 0 || payment <= 0) return { rows, willNeverPayOff: false, freq };
+  if (balance <= 0 || basePayment <= 0) return { rows, willNeverPayOff: false, freq };
 
-  const extraByPeriod = {};
-  (extraPayments || []).forEach(e => {
-    extraByPeriod[e.period] = (extraByPeriod[e.period] || 0) + (Number(e.amount) || 0);
-  });
-  const hasExtras = Object.keys(extraByPeriod).length > 0;
+  const firstInterest = balance * periodRate;
+  const noOverrideAtStart = paymentOverrides[1] == null;
+  const willNeverPayOff = paymentIncludesInterest && basePayment <= firstInterest && periodRate > 0 && noOverrideAtStart;
+  if (willNeverPayOff) return { rows, willNeverPayOff, freq };
 
-  if (paymentIncludesInterest) {
-    // The payment is fixed; interest comes out of it first, whatever's left reduces the principal.
-    const firstInterest = balance * periodRate;
-    const willNeverPayOff = payment <= firstInterest && periodRate > 0 && !hasExtras;
-    if (willNeverPayOff) return { rows, willNeverPayOff, freq };
-
-    for (let period = 1; period <= 600 && balance > 0; period++) {
-      const interest = balance * periodRate;
-      const basePrincipal = Math.max(0, payment - interest);
-      const extra = extraByPeriod[period] || 0;
-      const principal = Math.min(basePrincipal + extra, balance);
-      balance = Math.max(0, balance - principal);
-      rows.push({ period, payment: principal + interest, interest, principal, extra, balance });
+  for (let period = 1; period <= 600 && balance > 0; period++) {
+    const interest = balance * periodRate;
+    const override = paymentOverrides[period];
+    let principal;
+    if (override != null) {
+      principal = Math.min(Math.max(0, Number(override) - interest), balance);
+    } else if (paymentIncludesInterest) {
+      principal = Math.min(Math.max(0, basePayment - interest), balance);
+    } else {
+      principal = Math.min(basePayment, balance);
     }
-  } else {
-    // The payment is pure principal; interest is extra, added on top each period.
-    for (let period = 1; period <= 600 && balance > 0; period++) {
-      const interest = balance * periodRate;
-      const extra = extraByPeriod[period] || 0;
-      const principal = Math.min(payment + extra, balance);
-      balance = Math.max(0, balance - principal);
-      rows.push({ period, payment: principal + interest, interest, principal, extra, balance });
-    }
+    balance = Math.max(0, balance - principal);
+    rows.push({ period, payment: principal + interest, interest, principal, overridden: override != null, balance });
   }
   return { rows, willNeverPayOff: false, freq };
 }
 
+function addMonthsToDateStr(dateStr, months) {
+  if (!dateStr) return null;
+  const d = new Date(dateStr + "T00:00:00");
+  if (isNaN(d)) return null;
+  d.setMonth(d.getMonth() + months);
+  return d.toISOString().slice(0, 10);
+}
+
 function DebtCard({ debt, onChange, onDelete }) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [scheduleOpen, setScheduleOpen] = useState(false);
-  const [extraPeriodInput, setExtraPeriodInput] = useState("");
-  const [extraAmountInput, setExtraAmountInput] = useState("");
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [scheduleOpen, setScheduleOpen] = useState(true);
   const paymentIncludesInterest = debt.paymentIncludesInterest ?? true;
-  const extraPayments = debt.extraPayments || [];
-  const { rows, willNeverPayOff, freq } = buildDebtSchedule(debt.currentAmount, debt.interestRate, debt.paymentFrequency, debt.paymentAmount, paymentIncludesInterest, extraPayments);
+  const paymentOverrides = debt.paymentOverrides || {};
+  const { rows, willNeverPayOff, freq } = buildDebtSchedule(debt.currentAmount, debt.interestRate, debt.paymentFrequency, debt.paymentAmount, paymentIncludesInterest, paymentOverrides);
+  const monthsPerPeriod = 12 / freq.perYear;
 
-  const addExtra = () => {
-    const period = Math.round(Number(extraPeriodInput));
-    const amount = Number(extraAmountInput);
-    if (!period || period < 1 || !amount || amount <= 0) return;
-    onChange({ ...debt, extraPayments: [...extraPayments, { period, amount }] });
-    setExtraPeriodInput(""); setExtraAmountInput("");
+  const setOverride = (period, value) => {
+    onChange({ ...debt, paymentOverrides: { ...paymentOverrides, [period]: value } });
   };
-  const removeExtra = (idx) => {
-    onChange({ ...debt, extraPayments: extraPayments.filter((_, i) => i !== idx) });
+  const clearOverride = (period) => {
+    const next = { ...paymentOverrides };
+    delete next[period];
+    onChange({ ...debt, paymentOverrides: next });
   };
+
   const totalInterest = rows.reduce((a, r) => a + r.interest, 0);
   const years = rows.length > 0 ? Math.floor(rows.length / freq.perYear) : 0;
   const remainder = rows.length > 0 ? rows.length % freq.perYear : 0;
@@ -1867,105 +1864,102 @@ function DebtCard({ debt, onChange, onDelete }) {
 
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <div>
-          <label style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: COLORS.inkSoft, display: "block", marginBottom: 4 }}>
-            Current amount owed
-          </label>
-          <div style={{ position: "relative" }}>
-            <span style={{ position: "absolute", left: 12, top: 9, ...fontBody, fontSize: 14, color: COLORS.inkSoft }}>{CURRENCY_SYMBOL}</span>
-            <input
-              type="number" onFocus={e => e.target.select()} value={debt.currentAmount || ""}
-              onChange={e => onChange({ ...debt, currentAmount: Number(e.target.value) })}
-              style={{ ...fontBody, width: "100%", boxSizing: "border-box", padding: "8px 10px 8px 26px", borderRadius: 8, border: `1.5px solid ${COLORS.border}`, fontSize: 14, outline: "none" }}
-            />
-          </div>
-        </div>
+          <button
+            onClick={() => setDetailsOpen(o => !o)}
+            style={{
+              width: "100%", background: "none", border: "none", cursor: "pointer", display: "flex",
+              alignItems: "center", justifyContent: "space-between", padding: 0, gap: 8,
+            }}
+          >
+            <span style={{ ...fontBody, fontSize: 13, fontWeight: 700, color: COLORS.ink, textAlign: "left" }}>
+              {fmt(debt.currentAmount || 0)} owed
+              <span style={{ color: COLORS.inkSoft, fontWeight: 400 }}> · {debt.interestRate || 0}%/yr · {fmt(debt.paymentAmount || 0)} {freq.label.toLowerCase()}</span>
+            </span>
+            {detailsOpen ? <ChevronLeft size={16} color={COLORS.inkSoft} style={{ transform: "rotate(90deg)", flexShrink: 0 }} /> : <ChevronLeft size={16} color={COLORS.inkSoft} style={{ transform: "rotate(-90deg)", flexShrink: 0 }} />}
+          </button>
 
-        <div style={{ display: "flex", gap: 10 }}>
-          <div style={{ flex: 1 }}>
-            <label style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: COLORS.inkSoft, display: "block", marginBottom: 4 }}>
-              Interest rate (% per year)
-            </label>
-            <input
-              type="number" onFocus={e => e.target.select()} value={debt.interestRate || ""}
-              onChange={e => onChange({ ...debt, interestRate: Number(e.target.value) })}
-              placeholder="e.g. 5.5"
-              style={{ ...fontBody, width: "100%", boxSizing: "border-box", padding: "8px 10px", borderRadius: 8, border: `1.5px solid ${COLORS.border}`, fontSize: 14, outline: "none" }}
-            />
-          </div>
-          <div style={{ flex: 1 }}>
-            <label style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: COLORS.inkSoft, display: "block", marginBottom: 4 }}>
-              Payment amount
-            </label>
-            <div style={{ position: "relative" }}>
-              <span style={{ position: "absolute", left: 12, top: 9, ...fontBody, fontSize: 14, color: COLORS.inkSoft }}>{CURRENCY_SYMBOL}</span>
-              <input
-                type="number" onFocus={e => e.target.select()} value={debt.paymentAmount || ""}
-                onChange={e => onChange({ ...debt, paymentAmount: Number(e.target.value) })}
-                style={{ ...fontBody, width: "100%", boxSizing: "border-box", padding: "8px 10px 8px 26px", borderRadius: 8, border: `1.5px solid ${COLORS.border}`, fontSize: 14, outline: "none" }}
-              />
-            </div>
-          </div>
-        </div>
-
-        <div>
-          <label style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: COLORS.inkSoft, display: "block", marginBottom: 4 }}>
-            This payment amount is
-          </label>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            <Chip active={paymentIncludesInterest} onClick={() => onChange({ ...debt, paymentIncludesInterest: true })}>
-              Inclusive of interest
-            </Chip>
-            <Chip active={!paymentIncludesInterest} onClick={() => onChange({ ...debt, paymentIncludesInterest: false })}>
-              Exclusive — interest is extra
-            </Chip>
-          </div>
-        </div>
-
-        <div>
-          <label style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: COLORS.inkSoft, display: "block", marginBottom: 4 }}>
-            How often you pay
-          </label>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {DEBT_FREQUENCIES.map(f => (
-              <Chip key={f.key} active={(debt.paymentFrequency || "monthly") === f.key} onClick={() => onChange({ ...debt, paymentFrequency: f.key })}>
-                {f.label}
-              </Chip>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <label style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: COLORS.inkSoft, display: "block", marginBottom: 4 }}>
-            One-time extra payments
-          </label>
-          <p style={{ ...fontBody, fontSize: 11, color: COLORS.inkSoft, margin: "0 0 6px" }}>
-            Paying extra once in a while? Add it to a specific payment number below — your regular payment amount above stays the same.
-          </p>
-          {extraPayments.length > 0 && (
-            <div style={{ marginBottom: 8 }}>
-              {extraPayments.map((e, i) => (
-                <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, padding: "3px 0" }}>
-                  <span style={{ ...fontBody, color: COLORS.ink }}>Payment #{e.period}: +{fmt(e.amount)}</span>
-                  <button onClick={() => removeExtra(i)} style={{ background: "none", border: "none", cursor: "pointer", color: COLORS.inkSoft, display: "flex" }}>
-                    <X size={13} />
-                  </button>
+          {detailsOpen && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 12 }}>
+              <div>
+                <label style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: COLORS.inkSoft, display: "block", marginBottom: 4 }}>
+                  Current amount owed
+                </label>
+                <div style={{ position: "relative" }}>
+                  <span style={{ position: "absolute", left: 12, top: 9, ...fontBody, fontSize: 14, color: COLORS.inkSoft }}>{CURRENCY_SYMBOL}</span>
+                  <input
+                    type="number" onFocus={e => e.target.select()} value={debt.currentAmount || ""}
+                    onChange={e => onChange({ ...debt, currentAmount: Number(e.target.value) })}
+                    style={{ ...fontBody, width: "100%", boxSizing: "border-box", padding: "8px 10px 8px 26px", borderRadius: 8, border: `1.5px solid ${COLORS.border}`, fontSize: 14, outline: "none" }}
+                  />
                 </div>
-              ))}
+              </div>
+
+              <div>
+                <label style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: COLORS.inkSoft, display: "block", marginBottom: 4 }}>
+                  First payment date
+                </label>
+                <input
+                  type="date" value={debt.firstPaymentDate || ""}
+                  onChange={e => onChange({ ...debt, firstPaymentDate: e.target.value })}
+                  style={{ ...fontBody, width: "100%", boxSizing: "border-box", padding: "8px 10px", borderRadius: 8, border: `1.5px solid ${COLORS.border}`, fontSize: 13, outline: "none" }}
+                />
+              </div>
+
+              <div style={{ display: "flex", gap: 10 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: COLORS.inkSoft, display: "block", marginBottom: 4 }}>
+                    Interest rate (% per year)
+                  </label>
+                  <input
+                    type="number" onFocus={e => e.target.select()} value={debt.interestRate || ""}
+                    onChange={e => onChange({ ...debt, interestRate: Number(e.target.value) })}
+                    placeholder="e.g. 5.5"
+                    style={{ ...fontBody, width: "100%", boxSizing: "border-box", padding: "8px 10px", borderRadius: 8, border: `1.5px solid ${COLORS.border}`, fontSize: 14, outline: "none" }}
+                  />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: COLORS.inkSoft, display: "block", marginBottom: 4 }}>
+                    Payment amount
+                  </label>
+                  <div style={{ position: "relative" }}>
+                    <span style={{ position: "absolute", left: 12, top: 9, ...fontBody, fontSize: 14, color: COLORS.inkSoft }}>{CURRENCY_SYMBOL}</span>
+                    <input
+                      type="number" onFocus={e => e.target.select()} value={debt.paymentAmount || ""}
+                      onChange={e => onChange({ ...debt, paymentAmount: Number(e.target.value) })}
+                      style={{ ...fontBody, width: "100%", boxSizing: "border-box", padding: "8px 10px 8px 26px", borderRadius: 8, border: `1.5px solid ${COLORS.border}`, fontSize: 14, outline: "none" }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: COLORS.inkSoft, display: "block", marginBottom: 4 }}>
+                  This payment amount is
+                </label>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  <Chip active={paymentIncludesInterest} onClick={() => onChange({ ...debt, paymentIncludesInterest: true })}>
+                    Inclusive of interest
+                  </Chip>
+                  <Chip active={!paymentIncludesInterest} onClick={() => onChange({ ...debt, paymentIncludesInterest: false })}>
+                    Exclusive — interest is extra
+                  </Chip>
+                </div>
+              </div>
+
+              <div>
+                <label style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: COLORS.inkSoft, display: "block", marginBottom: 4 }}>
+                  How often you pay
+                </label>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {DEBT_FREQUENCIES.map(f => (
+                    <Chip key={f.key} active={(debt.paymentFrequency || "monthly") === f.key} onClick={() => onChange({ ...debt, paymentFrequency: f.key })}>
+                      {f.label}
+                    </Chip>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
-          <div style={{ display: "flex", gap: 6 }}>
-            <input
-              type="number" onFocus={e => e.target.select()} value={extraPeriodInput} onChange={e => setExtraPeriodInput(e.target.value)}
-              placeholder="Payment #"
-              style={{ ...fontBody, width: 90, padding: "8px 10px", borderRadius: 8, border: `1.5px solid ${COLORS.border}`, fontSize: 13, outline: "none" }}
-            />
-            <input
-              type="number" onFocus={e => e.target.select()} value={extraAmountInput} onChange={e => setExtraAmountInput(e.target.value)}
-              placeholder={`Extra (${CURRENCY_SYMBOL})`}
-              style={{ ...fontBody, flex: 1, padding: "8px 10px", borderRadius: 8, border: `1.5px solid ${COLORS.border}`, fontSize: 13, outline: "none" }}
-            />
-            <button onClick={addExtra} style={{ ...fontBody, background: COLORS.primary, color: "#fff", border: "none", borderRadius: 8, padding: "0 14px", fontWeight: 700, cursor: "pointer" }}>Add</button>
-          </div>
         </div>
 
         <div style={{ background: COLORS.lavender, borderRadius: 10, padding: "10px 12px" }}>
@@ -1999,14 +1993,15 @@ function DebtCard({ debt, onChange, onDelete }) {
                 alignItems: "center", justifyContent: "space-between", padding: 0,
               }}
             >
-              <span style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: COLORS.inkSoft }}>Payoff schedule</span>
-              {scheduleOpen ? <ChevronLeft size={16} color={COLORS.inkSoft} style={{ transform: "rotate(90deg)" }} /> : <ChevronLeft size={16} color={COLORS.inkSoft} style={{ transform: "rotate(-90deg)" }} />}
+              <span style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: COLORS.inkSoft }}>Payoff schedule — edit any payment to see the plan change</span>
+              {scheduleOpen ? <ChevronLeft size={16} color={COLORS.inkSoft} style={{ transform: "rotate(90deg)", flexShrink: 0 }} /> : <ChevronLeft size={16} color={COLORS.inkSoft} style={{ transform: "rotate(-90deg)", flexShrink: 0 }} />}
             </button>
             {scheduleOpen && (
-              <div style={{ maxHeight: 240, overflowY: "auto", marginTop: 8 }}>
+              <div style={{ maxHeight: 320, overflowY: "auto", marginTop: 8 }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", ...fontBody, fontSize: 11 }}>
                   <thead>
                     <tr>
+                      {debt.firstPaymentDate && <th style={{ textAlign: "left", padding: "4px 6px", color: COLORS.inkSoft, fontWeight: 600, position: "sticky", top: 0, background: COLORS.card }}>Date</th>}
                       <th style={{ textAlign: "left", padding: "4px 6px", color: COLORS.inkSoft, fontWeight: 600, position: "sticky", top: 0, background: COLORS.card }}>#</th>
                       <th style={{ textAlign: "right", padding: "4px 6px", color: COLORS.inkSoft, fontWeight: 600, position: "sticky", top: 0, background: COLORS.card }}>Payment</th>
                       <th style={{ textAlign: "right", padding: "4px 6px", color: COLORS.inkSoft, fontWeight: 600, position: "sticky", top: 0, background: COLORS.card }}>Interest</th>
@@ -2015,18 +2010,36 @@ function DebtCard({ debt, onChange, onDelete }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.map(r => (
-                      <tr key={r.period} style={{ borderTop: `1px solid ${COLORS.border}`, background: r.extra > 0 ? COLORS.lavender : "transparent" }}>
-                        <td style={{ padding: "4px 6px" }}>{r.period}</td>
-                        <td style={{ padding: "4px 6px", textAlign: "right" }}>
-                          {fmt(r.payment)}
-                          {r.extra > 0 && <span style={{ color: COLORS.primary, fontWeight: 700 }}> (+{fmt(r.extra)})</span>}
-                        </td>
-                        <td style={{ padding: "4px 6px", textAlign: "right", color: COLORS.alert }}>{fmt(r.interest)}</td>
-                        <td style={{ padding: "4px 6px", textAlign: "right", color: COLORS.success }}>{fmt(r.principal)}</td>
-                        <td style={{ padding: "4px 6px", textAlign: "right", fontWeight: 700 }}>{fmt(r.balance)}</td>
-                      </tr>
-                    ))}
+                    {rows.map(r => {
+                      const dateStr = debt.firstPaymentDate ? addMonthsToDateStr(debt.firstPaymentDate, (r.period - 1) * monthsPerPeriod) : null;
+                      return (
+                        <tr key={r.period} style={{ borderTop: `1px solid ${COLORS.border}`, background: r.overridden ? COLORS.lavender : "transparent" }}>
+                          {debt.firstPaymentDate && <td style={{ padding: "4px 6px", whiteSpace: "nowrap" }}>{formatDate(dateStr)}</td>}
+                          <td style={{ padding: "4px 6px" }}>{r.period}</td>
+                          <td style={{ padding: "4px 6px", textAlign: "right" }}>
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4 }}>
+                              <input
+                                type="number" onFocus={e => e.target.select()}
+                                value={Math.round(r.payment * 100) / 100}
+                                onChange={e => setOverride(r.period, Number(e.target.value))}
+                                style={{
+                                  ...fontBody, width: 66, textAlign: "right", padding: "3px 5px", borderRadius: 5, fontSize: 11, outline: "none",
+                                  border: `1.5px solid ${r.overridden ? COLORS.primary : COLORS.border}`, background: "#fff",
+                                }}
+                              />
+                              {r.overridden && (
+                                <button onClick={() => clearOverride(r.period)} title="Revert to regular payment" style={{ background: "none", border: "none", cursor: "pointer", color: COLORS.inkSoft, display: "flex", padding: 0 }}>
+                                  <X size={12} />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                          <td style={{ padding: "4px 6px", textAlign: "right", color: COLORS.alert }}>{fmt(r.interest)}</td>
+                          <td style={{ padding: "4px 6px", textAlign: "right", color: COLORS.success }}>{fmt(r.principal)}</td>
+                          <td style={{ padding: "4px 6px", textAlign: "right", fontWeight: 700 }}>{fmt(r.balance)}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -2051,6 +2064,7 @@ function DebtView({ household, update }) {
       debts: [...(h.debts || []), {
         id: `${Date.now()}-${trimmed}`, name: trimmed, icon: ic || null,
         currentAmount: 0, interestRate: 0, paymentFrequency: "monthly", paymentAmount: 0, paymentIncludesInterest: true,
+        firstPaymentDate: "", paymentOverrides: {},
       }],
     }));
   };
