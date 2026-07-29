@@ -148,6 +148,8 @@ function emptyHousehold() {
     sameEveryMonth: { income: {}, expense: {} }, // { catName: bool } — planned value applies to all 12 months
     copyActualFromExpected: { income: {} }, // { catName: bool } — actual income mirrors the planned amount
     categoryIcons: { income: {}, expense: {}, reserve: {} }, // { catName: emoji }
+    categoryAddedMonth: { income: {}, expense: {}, reserve: {} }, // { catName: monthIdx } — hidden before this month
+    categoryRemovedMonth: { income: {}, expense: {}, reserve: {} }, // { catName: monthIdx | null } — hidden from this month on
     preferences: {
       showPartnerInitials: true,
       numberFormat: "US",   // "US" = 1,234.56   ·   "EU" = 1.234,56
@@ -158,6 +160,18 @@ function emptyHousehold() {
 }
 
 function zeros() { return Array(12).fill(0); }
+
+// A category is visible for a given month if it had already been added by then,
+// and hadn't been removed yet — old months keep showing categories that have
+// since been removed; months before a category existed never show it.
+function isCategoryVisible(household, type, cat, monthIdx) {
+  const added = household.categoryAddedMonth?.[type]?.[cat] ?? 0;
+  const removed = household.categoryRemovedMonth?.[type]?.[cat];
+  return monthIdx >= added && (removed == null || monthIdx < removed);
+}
+function visibleCategories(household, type, monthIdx) {
+  return household.categories[type].filter(c => isCategoryVisible(household, type, c, monthIdx));
+}
 
 // Fills fromMonth..11 with val, leaving months before fromMonth untouched —
 // past months are history and shouldn't change when a "same from here on" toggle is used.
@@ -1041,7 +1055,9 @@ function IncomeView({ household, update, selectedMonth, setSelectedMonth }) {
     });
   };
 
-  const incomeData = household.categories.income
+  const visibleIncome = visibleCategories(household, "income", selectedMonth);
+
+  const incomeData = visibleIncome
     .map(c => ({ name: c, value: (household.actual.income[c] || zeros())[selectedMonth] }))
     .filter(d => d.value > 0);
 
@@ -1067,13 +1083,13 @@ function IncomeView({ household, update, selectedMonth, setSelectedMonth }) {
         </Card>
       )}
 
-      {household.categories.income.length === 0 ? (
+      {visibleIncome.length === 0 ? (
         <Card style={{ textAlign: "center", padding: 40, marginTop: 20 }}>
-          <p style={{ ...fontBody, color: COLORS.inkSoft }}>No income categories yet — add one in Categories.</p>
+          <p style={{ ...fontBody, color: COLORS.inkSoft }}>No income categories yet — add one below.</p>
         </Card>
       ) : (
         <div className="two-col-grid" style={{ marginTop: 20 }}>
-          {household.categories.income.map(cat => (
+          {visibleIncome.map(cat => (
             <div
               key={cat}
               draggable
@@ -1100,6 +1116,8 @@ function IncomeView({ household, update, selectedMonth, setSelectedMonth }) {
           ))}
         </div>
       )}
+
+      <ChangeCategoriesPanel type="income" suggestions={SUGGESTED.income} household={household} update={update} selectedMonth={selectedMonth} />
     </div>
   );
 }
@@ -1150,7 +1168,9 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
   const expenseTx = household.transactions.filter(t => t.type === "expense" && t.month === selectedMonth);
   const showInitials = household.preferences?.showPartnerInitials && household.partners?.length > 0;
 
-  const monthExpenseData = household.categories.expense
+  const visibleExpense = visibleCategories(household, "expense", selectedMonth);
+
+  const monthExpenseData = visibleExpense
     .map(c => ({ name: c, icon: household.categoryIcons?.expense?.[c], value: (household.actual.expense[c] || zeros())[selectedMonth] }))
     .filter(d => d.value > 0)
     .sort((a, b) => b.value - a.value);
@@ -1193,7 +1213,7 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: household.partners?.length > 0 ? 10 : 0 }}>
           <select value={category} onChange={e => setCategory(e.target.value)} style={{ ...fontBody, padding: "10px 12px", borderRadius: 8, border: `1.5px solid ${COLORS.border}`, fontSize: 14, minWidth: 180 }}>
             <option value="">Select category…</option>
-            {household.categories.expense.map(c => (
+            {visibleExpense.map(c => (
               <option key={c} value={c}>{household.categoryIcons?.expense?.[c] ? `${household.categoryIcons.expense[c]} ${c}` : c}</option>
             ))}
           </select>
@@ -1249,6 +1269,8 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
           </div>
         )}
       </Card>
+
+      <ChangeCategoriesPanel type="expense" suggestions={SUGGESTED.expense} household={household} update={update} selectedMonth={selectedMonth} />
     </div>
   );
 }
@@ -1636,8 +1658,10 @@ function ReservesView({ household, update, selectedMonth, setSelectedMonth }) {
     });
   };
 
-  const reserveData = household.categories.reserve
-    .filter(cat => !(household.archivedReserves || []).includes(cat))
+  const visibleReserve = visibleCategories(household, "reserve", selectedMonth)
+    .filter(cat => !(household.archivedReserves || []).includes(cat));
+
+  const reserveData = visibleReserve
     .map(c => ({ name: c, value: (household.actual.reserve[c] || zeros())[selectedMonth] }))
     .filter(d => d.value > 0);
 
@@ -1665,15 +1689,14 @@ function ReservesView({ household, update, selectedMonth, setSelectedMonth }) {
         </Card>
       )}
 
-      {household.categories.reserve.length === 0 ? (
+      {visibleReserve.length === 0 ? (
         <Card style={{ textAlign: "center", padding: 40, marginTop: 20 }}>
-          <p style={{ ...fontBody, color: COLORS.inkSoft }}>No reserve goals yet — add one in Categories.</p>
+          <p style={{ ...fontBody, color: COLORS.inkSoft }}>No reserve goals yet — add one below.</p>
         </Card>
       ) : (
         <div style={{ marginTop: 20 }}>
           <div className="two-col-grid">
-            {household.categories.reserve
-              .filter(cat => !(household.archivedReserves || []).includes(cat))
+            {visibleReserve
               .map(cat => {
                 const arr = household.actual.reserve[cat] || zeros();
                 const savedYtd = arr.slice(0, selectedMonth + 1).reduce((a, b) => a + b, 0);
@@ -1726,6 +1749,8 @@ function ReservesView({ household, update, selectedMonth, setSelectedMonth }) {
           )}
         </div>
       )}
+
+      <ChangeCategoriesPanel type="reserve" suggestions={SUGGESTED.reserve} household={household} update={update} selectedMonth={selectedMonth} />
     </div>
   );
 }
@@ -1734,6 +1759,186 @@ function ReservesView({ household, update, selectedMonth, setSelectedMonth }) {
    CATEGORIES VIEW
    ============================================================ */
 const ICON_CHOICES = ["💰","💵","🏠","🚗","🍔","🛒","🎬","✈️","💊","🎁","⚡","📱","🏥","🎓","❤️","🐶","👶","☕","🧾","💼","📈","🛡️","🔧","🎉"];
+
+function IconPicker({ icon, setIcon }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ position: "relative" }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        type="button"
+        style={{
+          width: 38, height: 38, borderRadius: 8, border: `1.5px solid ${COLORS.border}`, background: "#fff",
+          fontSize: 18, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+        }}
+      >
+        {icon || "🏷️"}
+      </button>
+      {open && (
+        <div style={{
+          position: "absolute", top: 42, left: 0, zIndex: 10, background: "#fff", border: `1px solid ${COLORS.border}`,
+          borderRadius: 10, padding: 8, display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 4,
+          boxShadow: "0 6px 20px rgba(0,0,0,0.12)", width: 210,
+        }}>
+          {ICON_CHOICES.map(ic => (
+            <button key={ic} type="button" onClick={() => { setIcon(ic); setOpen(false); }}
+              style={{ fontSize: 17, background: "none", border: "none", cursor: "pointer", borderRadius: 6, padding: 4 }}>
+              {ic}
+            </button>
+          ))}
+          <button type="button" onClick={() => { setIcon(null); setOpen(false); }}
+            style={{ fontSize: 11, gridColumn: "span 6", color: COLORS.inkSoft, background: "none", border: "none", cursor: "pointer", ...fontBody }}>
+            No icon
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CategoryChip({ cat, icon, onIconChange, onRemove }) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  return (
+    <div style={{
+      ...fontBody, display: "flex", alignItems: "center", gap: 6, background: COLORS.lavender,
+      color: COLORS.primary, padding: "6px 10px", borderRadius: 20, fontSize: 13, fontWeight: 600,
+      position: "relative",
+    }}>
+      <button
+        type="button"
+        onClick={() => setPickerOpen(o => !o)}
+        title="Change icon"
+        style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", padding: 0, fontSize: 14, opacity: icon ? 1 : 0.5 }}
+      >
+        {icon || "🏷️"}
+      </button>
+      {cat}
+      <button onClick={onRemove} style={{ background: "none", border: "none", cursor: "pointer", color: COLORS.primary, display: "flex" }}>
+        <X size={13} />
+      </button>
+      {pickerOpen && (
+        <div style={{
+          position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 20, background: "#fff", border: `1px solid ${COLORS.border}`,
+          borderRadius: 10, padding: 8, display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 4,
+          boxShadow: "0 6px 20px rgba(0,0,0,0.12)", width: 210,
+        }}>
+          {ICON_CHOICES.map(ic => (
+            <button key={ic} type="button" onClick={() => { onIconChange(ic); setPickerOpen(false); }}
+              style={{ fontSize: 17, background: "none", border: "none", cursor: "pointer", borderRadius: 6, padding: 4 }}>
+              {ic}
+            </button>
+          ))}
+          <button type="button" onClick={() => { onIconChange(null); setPickerOpen(false); }}
+            style={{ fontSize: 11, gridColumn: "span 6", color: COLORS.inkSoft, background: "none", border: "none", cursor: "pointer", ...fontBody }}>
+            No icon
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ChangeCategoriesPanel({ type, suggestions, household, update, selectedMonth }) {
+  const [open, setOpen] = useState(false);
+  const [val, setVal] = useState("");
+  const [icon, setIcon] = useState(null);
+
+  const visible = visibleCategories(household, type, selectedMonth);
+
+  const addCat = (name, ic) => {
+    const trimmed = (name || "").trim();
+    if (!trimmed) return;
+    update(h => {
+      const exists = h.categories[type].includes(trimmed);
+      if (exists) {
+        if (isCategoryVisible(h, type, trimmed, selectedMonth)) return h; // already active, nothing to do
+        // Previously removed — bring it back from this month on rather than creating a duplicate.
+        return {
+          ...h,
+          categoryRemovedMonth: { ...h.categoryRemovedMonth, [type]: { ...h.categoryRemovedMonth[type], [trimmed]: null } },
+        };
+      }
+      return {
+        ...h,
+        categories: { ...h.categories, [type]: [...h.categories[type], trimmed] },
+        budget: { ...h.budget, [type]: { ...h.budget[type], [trimmed]: zeros() } },
+        actual: { ...h.actual, [type]: { ...h.actual[type], [trimmed]: zeros() } },
+        categoryIcons: { ...h.categoryIcons, [type]: { ...h.categoryIcons[type], [trimmed]: ic || null } },
+        categoryAddedMonth: { ...h.categoryAddedMonth, [type]: { ...h.categoryAddedMonth[type], [trimmed]: selectedMonth } },
+        ...(type === "reserve" ? {
+          releasedThrough: { ...h.releasedThrough, [trimmed]: null },
+          releasedAmount: { ...h.releasedAmount, [trimmed]: null },
+          reserveGoals: { ...h.reserveGoals, [trimmed]: { targetAmount: 0, targetDate: "" } },
+        } : {}),
+        ...(type === "income" ? {
+          sameEveryMonth: { ...h.sameEveryMonth, income: { ...h.sameEveryMonth.income, [trimmed]: false } },
+          copyActualFromExpected: { ...h.copyActualFromExpected, income: { ...h.copyActualFromExpected.income, [trimmed]: Array(12).fill(false) } },
+        } : {}),
+        ...(type === "expense" ? {
+          sameEveryMonth: { ...h.sameEveryMonth, expense: { ...h.sameEveryMonth.expense, [trimmed]: false } },
+        } : {}),
+      };
+    });
+  };
+
+  const removeCat = (name) => {
+    update(h => ({
+      ...h,
+      categoryRemovedMonth: { ...h.categoryRemovedMonth, [type]: { ...h.categoryRemovedMonth[type], [name]: selectedMonth } },
+    }));
+  };
+
+  const setCatIcon = (name, ic) => {
+    update(h => ({ ...h, categoryIcons: { ...h.categoryIcons, [type]: { ...h.categoryIcons[type], [name]: ic } } }));
+  };
+
+  return (
+    <Card style={{ marginTop: 20 }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          width: "100%", background: "none", border: "none", cursor: "pointer", display: "flex",
+          alignItems: "center", justifyContent: "space-between", padding: 0, marginBottom: open ? 14 : 0,
+        }}
+      >
+        <h3 style={{ ...fontDisplay, fontSize: 17, margin: 0, color: COLORS.ink }}>Change Categories</h3>
+        {open ? <ChevronLeft size={18} color={COLORS.inkSoft} style={{ transform: "rotate(90deg)" }} /> : <ChevronLeft size={18} color={COLORS.inkSoft} style={{ transform: "rotate(-90deg)" }} />}
+      </button>
+      {open && (
+        <>
+          <p style={{ ...fontBody, fontSize: 12, color: COLORS.inkSoft, margin: "0 0 12px" }}>
+            Removing a category hides it from {MONTHS[selectedMonth]} onward — earlier months keep showing it. A new category only appears from {MONTHS[selectedMonth]} on.
+          </p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
+            {visible.map(c => (
+              <CategoryChip
+                key={c}
+                cat={c}
+                icon={household.categoryIcons?.[type]?.[c]}
+                onIconChange={(ic) => setCatIcon(c, ic)}
+                onRemove={() => removeCat(c)}
+              />
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+            {suggestions.filter(s => !visible.includes(s)).map(s => (
+              <Chip key={s} onClick={() => addCat(s, SUGGESTED_ICONS[type]?.[s])}>
+                {SUGGESTED_ICONS[type]?.[s] ? `${SUGGESTED_ICONS[type][s]} ` : "+ "}{s}
+              </Chip>
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <IconPicker icon={icon} setIcon={setIcon} />
+            <input value={val} onChange={e => setVal(e.target.value)} onKeyDown={e => e.key === "Enter" && (addCat(val, icon), setVal(""), setIcon(null))}
+              placeholder="Add your own category…"
+              style={{ ...fontBody, flex: 1, padding: "9px 12px", borderRadius: 8, border: `1.5px solid ${COLORS.border}`, fontSize: 13, outline: "none" }} />
+            <button onClick={() => { addCat(val, icon); setVal(""); setIcon(null); }} style={{ ...fontBody, background: COLORS.primary, color: "#fff", border: "none", borderRadius: 8, padding: "0 14px", fontWeight: 700, cursor: "pointer" }}>Add</button>
+          </div>
+        </>
+      )}
+    </Card>
+  );
+}
 
 function AccountPanel({ household, sessionPassword, onRename }) {
   const [newId, setNewId] = useState(household.code || "");
@@ -1836,159 +2041,10 @@ function AccountPanel({ household, sessionPassword, onRename }) {
 }
 
 function CategoriesView({ household, update, sessionPassword, onRename }) {
-  const addCat = (type, name, icon) => {
-    if (!name.trim() || household.categories[type].includes(name.trim())) return;
-    update(h => ({
-      ...h,
-      categories: { ...h.categories, [type]: [...h.categories[type], name.trim()] },
-      budget: { ...h.budget, [type]: { ...h.budget[type], [name.trim()]: zeros() } },
-      actual: { ...h.actual, [type]: { ...h.actual[type], [name.trim()]: zeros() } },
-      categoryIcons: { ...h.categoryIcons, [type]: { ...h.categoryIcons[type], [name.trim()]: icon || null } },
-      ...(type === "reserve" ? {
-        releasedThrough: { ...h.releasedThrough, [name.trim()]: null },
-        releasedAmount: { ...h.releasedAmount, [name.trim()]: null },
-        reserveGoals: { ...h.reserveGoals, [name.trim()]: { targetAmount: 0, targetDate: "" } },
-      } : {}),
-      ...(type === "income" ? {
-        sameEveryMonth: { ...h.sameEveryMonth, income: { ...h.sameEveryMonth.income, [name.trim()]: false } },
-        copyActualFromExpected: { ...h.copyActualFromExpected, income: { ...h.copyActualFromExpected.income, [name.trim()]: Array(12).fill(false) } },
-      } : {}),
-      ...(type === "expense" ? {
-        sameEveryMonth: { ...h.sameEveryMonth, expense: { ...h.sameEveryMonth.expense, [name.trim()]: false } },
-      } : {}),
-    }));
-  };
-  const removeCat = (type, name) => {
-    update(h => {
-      const cats = h.categories[type].filter(c => c !== name);
-      const budget = { ...h.budget[type] }; delete budget[name];
-      const actual = { ...h.actual[type] }; delete actual[name];
-      const icons = { ...h.categoryIcons[type] }; delete icons[name];
-      return { ...h, categories: { ...h.categories, [type]: cats }, budget: { ...h.budget, [type]: budget }, actual: { ...h.actual, [type]: actual }, categoryIcons: { ...h.categoryIcons, [type]: icons } };
-    });
-  };
-  const setCatIcon = (type, name, icon) => {
-    update(h => ({ ...h, categoryIcons: { ...h.categoryIcons, [type]: { ...h.categoryIcons[type], [name]: icon } } }));
-  };
-
-  const IconPicker = ({ icon, setIcon }) => {
-    const [open, setOpen] = useState(false);
-    return (
-      <div style={{ position: "relative" }}>
-        <button
-          onClick={() => setOpen(o => !o)}
-          type="button"
-          style={{
-            width: 38, height: 38, borderRadius: 8, border: `1.5px solid ${COLORS.border}`, background: "#fff",
-            fontSize: 18, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
-          }}
-        >
-          {icon || "🏷️"}
-        </button>
-        {open && (
-          <div style={{
-            position: "absolute", top: 42, left: 0, zIndex: 10, background: "#fff", border: `1px solid ${COLORS.border}`,
-            borderRadius: 10, padding: 8, display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 4,
-            boxShadow: "0 6px 20px rgba(0,0,0,0.12)", width: 210,
-          }}>
-            {ICON_CHOICES.map(ic => (
-              <button key={ic} type="button" onClick={() => { setIcon(ic); setOpen(false); }}
-                style={{ fontSize: 17, background: "none", border: "none", cursor: "pointer", borderRadius: 6, padding: 4 }}>
-                {ic}
-              </button>
-            ))}
-            <button type="button" onClick={() => { setIcon(null); setOpen(false); }}
-              style={{ fontSize: 11, gridColumn: "span 6", color: COLORS.inkSoft, background: "none", border: "none", cursor: "pointer", ...fontBody }}>
-              No icon
-            </button>
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  const CategoryChip = ({ cat, icon, onIconChange, onRemove }) => {
-    const [pickerOpen, setPickerOpen] = useState(false);
-    return (
-      <div style={{
-        ...fontBody, display: "flex", alignItems: "center", gap: 6, background: COLORS.lavender,
-        color: COLORS.primary, padding: "6px 10px", borderRadius: 20, fontSize: 13, fontWeight: 600,
-        position: "relative",
-      }}>
-        <button
-          type="button"
-          onClick={() => setPickerOpen(o => !o)}
-          title="Change icon"
-          style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", padding: 0, fontSize: 14, opacity: icon ? 1 : 0.5 }}
-        >
-          {icon || "🏷️"}
-        </button>
-        {cat}
-        <button onClick={onRemove} style={{ background: "none", border: "none", cursor: "pointer", color: COLORS.primary, display: "flex" }}>
-          <X size={13} />
-        </button>
-        {pickerOpen && (
-          <div style={{
-            position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 20, background: "#fff", border: `1px solid ${COLORS.border}`,
-            borderRadius: 10, padding: 8, display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 4,
-            boxShadow: "0 6px 20px rgba(0,0,0,0.12)", width: 210,
-          }}>
-            {ICON_CHOICES.map(ic => (
-              <button key={ic} type="button" onClick={() => { onIconChange(ic); setPickerOpen(false); }}
-                style={{ fontSize: 17, background: "none", border: "none", cursor: "pointer", borderRadius: 6, padding: 4 }}>
-                {ic}
-              </button>
-            ))}
-            <button type="button" onClick={() => { onIconChange(null); setPickerOpen(false); }}
-              style={{ fontSize: 11, gridColumn: "span 6", color: COLORS.inkSoft, background: "none", border: "none", cursor: "pointer", ...fontBody }}>
-              No icon
-            </button>
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  const Section = ({ type, title, suggestions }) => {
-    const [val, setVal] = useState("");
-    const [icon, setIcon] = useState(null);
-    return (
-      <Card style={{ marginBottom: 20 }}>
-        <h3 style={{ ...fontDisplay, fontSize: 17, margin: "0 0 12px", color: COLORS.ink }}>{title}</h3>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
-          {household.categories[type].map(c => (
-            <CategoryChip
-              key={c}
-              type={type}
-              cat={c}
-              icon={household.categoryIcons?.[type]?.[c]}
-              onIconChange={(ic) => setCatIcon(type, c, ic)}
-              onRemove={() => removeCat(type, c)}
-            />
-          ))}
-        </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-          {suggestions.filter(s => !household.categories[type].includes(s)).map(s => (
-            <Chip key={s} onClick={() => addCat(type, s, SUGGESTED_ICONS[type]?.[s])}>
-              {SUGGESTED_ICONS[type]?.[s] ? `${SUGGESTED_ICONS[type][s]} ` : "+ "}{s}
-            </Chip>
-          ))}
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <IconPicker icon={icon} setIcon={setIcon} />
-          <input value={val} onChange={e => setVal(e.target.value)} onKeyDown={e => e.key === "Enter" && (addCat(type, val, icon), setVal(""), setIcon(null))}
-            placeholder="Add your own category…"
-            style={{ ...fontBody, flex: 1, padding: "9px 12px", borderRadius: 8, border: `1.5px solid ${COLORS.border}`, fontSize: 13, outline: "none" }} />
-          <button onClick={() => { addCat(type, val, icon); setVal(""); setIcon(null); }} style={{ ...fontBody, background: COLORS.primary, color: "#fff", border: "none", borderRadius: 8, padding: "0 14px", fontWeight: 700, cursor: "pointer" }}>Add</button>
-        </div>
-      </Card>
-    );
-  };
-
   return (
     <div className="page-content" style={{ flex: 1 }}>
-      <h1 style={{ ...fontDisplay, fontSize: 30, color: COLORS.ink, margin: "0 0 4px" }}>Categories & Settings</h1>
-      <p style={{ ...fontBody, color: COLORS.inkSoft, margin: "0 0 24px", fontSize: 14 }}>Pick from suggestions or add your own — anytime.</p>
+      <h1 style={{ ...fontDisplay, fontSize: 30, color: COLORS.ink, margin: "0 0 4px" }}>Settings</h1>
+      <p style={{ ...fontBody, color: COLORS.inkSoft, margin: "0 0 24px", fontSize: 14 }}>Account, balance, and appearance. Categories are managed from the Income, Expenses, and Reserves pages themselves.</p>
       <AccountPanel household={household} sessionPassword={sessionPassword} onRename={onRename} />
       <Card style={{ marginBottom: 20 }}>
         <h3 style={{ ...fontDisplay, fontSize: 17, margin: "0 0 4px", color: COLORS.ink }}>Starting balance</h3>
@@ -2012,9 +2068,6 @@ function CategoriesView({ household, update, sessionPassword, onRename }) {
         <ThemePicker theme={household.theme || THEMES[0]} setTheme={(t) => update(h => ({ ...h, theme: t }))} />
         <CurrencyPicker currency={household.currency || CURRENCIES[0]} setCurrency={(c) => update(h => ({ ...h, currency: c }))} />
       </Card>
-      <Section type="income" title="Income" suggestions={SUGGESTED.income} />
-      <Section type="expense" title="Expenses" suggestions={SUGGESTED.expense} />
-      <Section type="reserve" title="Reserves" suggestions={SUGGESTED.reserve} />
       <PreferencesPanel household={household} update={update} />
     </div>
   );
