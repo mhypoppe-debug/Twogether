@@ -771,8 +771,8 @@ function Dashboard({ household, selectedMonth, setSelectedMonth }) {
   }));
 
   const spendingData = [
-    ...household.categories.expense.map(c => ({ name: c, icon: household.categoryIcons?.expense?.[c], value: (household.actual.expense[c] || zeros()).slice(0, selectedMonth + 1).reduce((a, b) => a + b, 0) })),
-    ...household.categories.reserve.map(c => ({ name: c, icon: household.categoryIcons?.reserve?.[c], value: (household.actual.reserve[c] || zeros()).slice(0, selectedMonth + 1).reduce((a, b) => a + b, 0) })),
+    ...household.categories.expense.map(c => ({ name: c, icon: household.categoryIcons?.expense?.[c], reserved: false, value: (household.actual.expense[c] || zeros()).slice(0, selectedMonth + 1).reduce((a, b) => a + b, 0) })),
+    ...household.categories.reserve.map(c => ({ name: c, icon: household.categoryIcons?.reserve?.[c], reserved: true, value: (household.actual.reserve[c] || zeros()).slice(0, selectedMonth + 1).reduce((a, b) => a + b, 0) })),
   ].filter(d => d.value > 0).sort((a, b) => b.value - a.value);
   const spendingMax = Math.max(1, ...spendingData.map(d => d.value));
 
@@ -826,12 +826,14 @@ function Dashboard({ household, selectedMonth, setSelectedMonth }) {
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 {spendingData.map((d, i) => (
-                  <div key={d.name}>
+                  <div key={`${d.name}-${d.reserved}`}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 3 }}>
                       <span style={{ ...fontBody, fontSize: 12, color: COLORS.ink, display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
                         <span style={{ width: 9, height: 9, borderRadius: 3, background: PALETTE[i % PALETTE.length], flexShrink: 0 }} />
                         {d.icon && <span>{d.icon}</span>}
-                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</span>
+                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {d.name}{d.reserved && <span style={{ color: COLORS.inkSoft, fontWeight: 400 }}> (reserved)</span>}
+                        </span>
                       </span>
                       <span style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: COLORS.ink, flexShrink: 0, paddingLeft: 8 }}>{fmt(d.value)}</span>
                     </div>
