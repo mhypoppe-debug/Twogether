@@ -966,12 +966,32 @@ function IncomeView({ household, update, selectedMonth, setSelectedMonth }) {
     });
   };
 
+  const incomeData = household.categories.income
+    .map(c => ({ name: c, value: (household.actual.income[c] || zeros())[selectedMonth] }))
+    .filter(d => d.value > 0);
+
   return (
     <div className="page-content" style={{ flex: 1 }}>
       <h1 style={{ ...fontDisplay, fontSize: 30, color: COLORS.ink, margin: "0 0 4px" }}>Income</h1>
       <p style={{ ...fontBody, color: COLORS.inkSoft, margin: "0 0 8px", fontSize: 14, maxWidth: 680 }}>
         Set what you expect from each source this month, then fill in what actually came in.
       </p>
+
+      {incomeData.length > 0 && (
+        <Card style={{ marginTop: 16, marginBottom: 4, maxWidth: 420 }}>
+          <h3 style={{ ...fontDisplay, fontSize: 16, margin: "0 0 12px", color: COLORS.ink }}>{MONTHS[selectedMonth]}'s income</h3>
+          <ResponsiveContainer width="100%" height={220}>
+            <PieChart>
+              <Pie data={incomeData} dataKey="value" nameKey="name" innerRadius={45} outerRadius={78} paddingAngle={2}>
+                {incomeData.map((_, i) => <Cell key={i} fill={PALETTE[i % PALETTE.length]} />)}
+              </Pie>
+              <Tooltip formatter={(v) => fmt(v)} />
+              <Legend wrapperStyle={{ fontSize: 12 }} />
+            </PieChart>
+          </ResponsiveContainer>
+        </Card>
+      )}
+
       {household.categories.income.length === 0 ? (
         <Card style={{ textAlign: "center", padding: 40, marginTop: 20 }}>
           <p style={{ ...fontBody, color: COLORS.inkSoft }}>No income categories yet — add one in Categories.</p>
