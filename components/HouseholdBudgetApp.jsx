@@ -1191,8 +1191,8 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
               <option key={c} value={c}>{household.categoryIcons?.expense?.[c] ? `${household.categoryIcons.expense[c]} ${c}` : c}</option>
             ))}
           </select>
-          <input type="number" onFocus={e => e.target.select()} placeholder={`Amount (${CURRENCY_SYMBOL})`} value={amount} onChange={e => setAmount(e.target.value)} style={{ ...fontBody, padding: "10px 12px", borderRadius: 8, border: `1.5px solid ${COLORS.border}`, fontSize: 14, width: 130 }} />
-          <input placeholder="Note (optional)" value={note} onChange={e => setNote(e.target.value)} style={{ ...fontBody, padding: "10px 12px", borderRadius: 8, border: `1.5px solid ${COLORS.border}`, fontSize: 14, flex: 1, minWidth: 160 }} />
+          <input type="number" onFocus={e => e.target.select()} onKeyDown={e => e.key === "Enter" && addTransaction()} placeholder={`Amount (${CURRENCY_SYMBOL})`} value={amount} onChange={e => setAmount(e.target.value)} style={{ ...fontBody, padding: "10px 12px", borderRadius: 8, border: `1.5px solid ${COLORS.border}`, fontSize: 14, width: 130 }} />
+          <input placeholder="Note (optional)" onKeyDown={e => e.key === "Enter" && addTransaction()} value={note} onChange={e => setNote(e.target.value)} style={{ ...fontBody, padding: "10px 12px", borderRadius: 8, border: `1.5px solid ${COLORS.border}`, fontSize: 14, flex: 1, minWidth: 160 }} />
           <button onClick={addTransaction} style={{ ...fontBody, background: COLORS.primary, color: "#fff", border: "none", borderRadius: 8, padding: "0 18px", fontWeight: 700, cursor: "pointer" }}>Add</button>
         </div>
         {household.partners?.length > 0 && (
