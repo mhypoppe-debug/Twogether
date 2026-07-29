@@ -1856,11 +1856,6 @@ function DebtCard({ debt, onChange, onDelete }) {
   const setOverride = (period, value) => {
     onChange({ ...debt, paymentOverrides: { ...paymentOverrides, [period]: value } });
   };
-  const clearOverride = (period) => {
-    const next = { ...paymentOverrides };
-    delete next[period];
-    onChange({ ...debt, paymentOverrides: next });
-  };
 
   const totalInterest = rows.reduce((a, r) => a + r.interest, 0);
   const years = rows.length > 0 ? Math.floor(rows.length / freq.perYear) : 0;
@@ -2042,22 +2037,15 @@ function DebtCard({ debt, onChange, onDelete }) {
                           <td style={{ padding: "4px 6px", textAlign: "right" }}>{fmt(r.payment)}</td>
                           <td style={{ padding: "4px 6px", textAlign: "right", color: COLORS.alert }}>{fmt(r.interest)}</td>
                           <td style={{ padding: "4px 6px", textAlign: "right" }}>
-                            <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4 }}>
-                              <input
-                                type="number" onFocus={e => e.target.select()}
-                                value={Math.round(r.principal * 100) / 100}
-                                onChange={e => setOverride(r.period, Number(e.target.value))}
-                                style={{
-                                  ...fontBody, width: 66, textAlign: "right", padding: "3px 5px", borderRadius: 5, fontSize: 11, outline: "none",
-                                  border: `1.5px solid ${r.overridden ? COLORS.primary : COLORS.border}`, background: "#fff", color: COLORS.success,
-                                }}
-                              />
-                              {r.overridden && (
-                                <button onClick={() => clearOverride(r.period)} title="Revert to regular payment" style={{ background: "none", border: "none", cursor: "pointer", color: COLORS.inkSoft, display: "flex", padding: 0 }}>
-                                  <X size={12} />
-                                </button>
-                              )}
-                            </div>
+                            <input
+                              type="number" onFocus={e => e.target.select()}
+                              value={Math.round(r.principal * 100) / 100}
+                              onChange={e => setOverride(r.period, Number(e.target.value))}
+                              style={{
+                                ...fontBody, width: 66, textAlign: "right", padding: "3px 5px", borderRadius: 5, fontSize: 11, outline: "none",
+                                border: `1.5px solid ${r.overridden ? COLORS.primary : COLORS.border}`, background: "#fff", color: COLORS.success,
+                              }}
+                            />
                           </td>
                           <td style={{ padding: "4px 6px", textAlign: "right", fontWeight: 700 }}>{fmt(r.balance)}</td>
                         </tr>
