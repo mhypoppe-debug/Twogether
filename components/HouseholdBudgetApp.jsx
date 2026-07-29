@@ -770,10 +770,11 @@ function Dashboard({ household, selectedMonth, setSelectedMonth }) {
     Reserved: sumMonth(household.actual.reserve, i),
   }));
 
-  const pieData = [
-    ...household.categories.expense.map(c => ({ name: c, value: (household.actual.expense[c] || zeros()).slice(0, selectedMonth + 1).reduce((a, b) => a + b, 0) })),
-    ...household.categories.reserve.map(c => ({ name: c, value: (household.actual.reserve[c] || zeros()).slice(0, selectedMonth + 1).reduce((a, b) => a + b, 0) })),
-  ].filter(d => d.value > 0);
+  const spendingData = [
+    ...household.categories.expense.map(c => ({ name: c, icon: household.categoryIcons?.expense?.[c], value: (household.actual.expense[c] || zeros()).slice(0, selectedMonth + 1).reduce((a, b) => a + b, 0) })),
+    ...household.categories.reserve.map(c => ({ name: c, icon: household.categoryIcons?.reserve?.[c], value: (household.actual.reserve[c] || zeros()).slice(0, selectedMonth + 1).reduce((a, b) => a + b, 0) })),
+  ].filter(d => d.value > 0).sort((a, b) => b.value - a.value);
+  const spendingMax = Math.max(1, ...spendingData.map(d => d.value));
 
   const noData = household.transactions.length === 0;
 
@@ -820,17 +821,26 @@ function Dashboard({ household, selectedMonth, setSelectedMonth }) {
           </Card>
           <Card style={{ flex: 1, minWidth: 260 }}>
             <h3 style={{ ...fontDisplay, fontSize: 16, margin: "0 0 16px", color: COLORS.ink }}>Spending year to date</h3>
-            {pieData.length === 0 ? (
+            {spendingData.length === 0 ? (
               <p style={{ ...fontBody, fontSize: 13, color: COLORS.inkSoft }}>No spending logged yet.</p>
             ) : (
-              <ResponsiveContainer width="100%" height={240}>
-                <PieChart>
-                  <Pie data={pieData} dataKey="value" nameKey="name" innerRadius={50} outerRadius={85} paddingAngle={2}>
-                    {pieData.map((_, i) => <Cell key={i} fill={PALETTE[i % PALETTE.length]} />)}
-                  </Pie>
-                  <Tooltip formatter={(v) => fmt(v)} />
-                </PieChart>
-              </ResponsiveContainer>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {spendingData.map((d, i) => (
+                  <div key={d.name}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 3 }}>
+                      <span style={{ ...fontBody, fontSize: 12, color: COLORS.ink, display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
+                        <span style={{ width: 9, height: 9, borderRadius: 3, background: PALETTE[i % PALETTE.length], flexShrink: 0 }} />
+                        {d.icon && <span>{d.icon}</span>}
+                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</span>
+                      </span>
+                      <span style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: COLORS.ink, flexShrink: 0, paddingLeft: 8 }}>{fmt(d.value)}</span>
+                    </div>
+                    <div style={{ height: 8, width: "100%", background: COLORS.lavender, borderRadius: 4, overflow: "hidden" }}>
+                      <div style={{ height: "100%", width: `${(d.value / spendingMax) * 100}%`, background: PALETTE[i % PALETTE.length], borderRadius: 4 }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </Card>
         </div>
