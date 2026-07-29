@@ -845,23 +845,37 @@ function Dashboard({ household, selectedMonth, setSelectedMonth }) {
 function IncomeGoalCard({ cat, icon, planned, actual, sameEveryMonth, copyFromExpected, onPlannedChange, onActualChange, onToggleSame, onToggleCopy }) {
   const diff = actual - planned;
   const pct = planned > 0 ? Math.min(100, (actual / planned) * 100) : (actual > 0 ? 100 : 0);
+  const [expectedOpen, setExpectedOpen] = useState(false);
   return (
     <Card style={{ marginBottom: 16 }}>
       <h4 style={{ ...fontDisplay, fontSize: 18, margin: "0 0 14px", color: COLORS.ink }}>{icon && <span>{icon} </span>}{cat}</h4>
       <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
         <div style={{ flex: "1 1 220px", minWidth: 220 }}>
-          <label style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: COLORS.inkSoft, display: "block", marginBottom: 4 }}>
-            Expected this month
-          </label>
-          <div style={{ position: "relative" }}>
-            <span style={{ position: "absolute", left: 12, top: 9, ...fontBody, fontSize: 14, color: COLORS.inkSoft }}>{CURRENCY_SYMBOL}</span>
-            <input
-              type="number" onFocus={e => e.target.select()} value={planned}
-              onChange={e => onPlannedChange(Number(e.target.value))}
-              style={{ ...fontBody, width: "100%", boxSizing: "border-box", padding: "8px 10px 8px 26px", borderRadius: 8, border: `1.5px solid ${COLORS.gold}`, background: "#FFF8EA", fontSize: 14, outline: "none" }}
-            />
-          </div>
-          <Checkbox checked={sameEveryMonth} onChange={onToggleSame} label="Same from here on" />
+          <button
+            onClick={() => setExpectedOpen(o => !o)}
+            style={{
+              width: "100%", background: "none", border: "none", cursor: "pointer", display: "flex",
+              alignItems: "center", justifyContent: "space-between", padding: 0, marginBottom: 4,
+            }}
+          >
+            <span style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: COLORS.inkSoft }}>
+              Expected this month: {fmt(planned)}
+            </span>
+            <ChevronLeft size={16} color={COLORS.inkSoft} style={{ transform: expectedOpen ? "rotate(-90deg)" : "rotate(90deg)", flexShrink: 0 }} />
+          </button>
+          {expectedOpen && (
+            <>
+              <div style={{ position: "relative" }}>
+                <span style={{ position: "absolute", left: 12, top: 9, ...fontBody, fontSize: 14, color: COLORS.inkSoft }}>{CURRENCY_SYMBOL}</span>
+                <input
+                  type="number" onFocus={e => e.target.select()} value={planned}
+                  onChange={e => onPlannedChange(Number(e.target.value))}
+                  style={{ ...fontBody, width: "100%", boxSizing: "border-box", padding: "8px 10px 8px 26px", borderRadius: 8, border: `1.5px solid ${COLORS.gold}`, background: "#FFF8EA", fontSize: 14, outline: "none" }}
+                />
+              </div>
+              <Checkbox checked={sameEveryMonth} onChange={onToggleSame} label="Same from here on" />
+            </>
+          )}
         </div>
         <div style={{ flex: "1 1 240px", minWidth: 240 }}>
           <div style={{ height: 14, width: "100%", background: COLORS.lavender, borderRadius: 8, overflow: "hidden", marginBottom: 6 }}>
@@ -997,7 +1011,7 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
   const [loggedBy, setLoggedBy] = useState(household.partners?.[0] || "");
-  const [budgetOpen, setBudgetOpen] = useState(true);
+  const [budgetOpen, setBudgetOpen] = useState(false);
 
   const setBudgetVal = (cat, val) => {
     update(h => {
