@@ -7,7 +7,7 @@ import {
 import {
   Home, Wallet, PiggyBank, Receipt, ChevronRight, ChevronLeft,
   Plus, X, Check, Users, TrendingUp, TrendingDown, Sparkles, Lock,
-  UserPlus, Pencil, GripVertical, Settings as SettingsIcon
+  UserPlus, Pencil, GripVertical, Settings as SettingsIcon, CreditCard
 } from "lucide-react";
 
 /* ============================================================
@@ -61,6 +61,7 @@ const SUGGESTED = {
   income: ["Partner 1 Salary", "Partner 2 Salary", "Bonus", "Investments / Dividends", "Other / Extra"],
   expense: ["Rent", "Mortgage", "Groceries", "Utilities", "Transportation", "Dining Out", "Health", "Taxes", "Insurance", "Maintenance"],
   reserve: ["Insurance", "Gifts", "Vacation fund", "Home Repairs", "Taxes"],
+  debt: ["Credit card", "Student loan", "Car loan", "Mortgage", "Personal loan"],
 };
 
 const SUGGESTED_ICONS = {
@@ -90,7 +91,21 @@ const SUGGESTED_ICONS = {
     "Home Repairs": "🔧",
     "Taxes": "🧾",
   },
+  debt: {
+    "Credit card": "💳",
+    "Student loan": "🎓",
+    "Car loan": "🚗",
+    "Mortgage": "🏦",
+    "Personal loan": "🧾",
+  },
 };
+
+const DEBT_FREQUENCIES = [
+  { key: "monthly", label: "Monthly", perYear: 12 },
+  { key: "quarterly", label: "Quarterly", perYear: 4 },
+  { key: "biannual", label: "Half-yearly", perYear: 2 },
+  { key: "yearly", label: "Yearly", perYear: 1 },
+];
 
 const CURRENCIES = [
   { code: "USD", symbol: "$", label: "US Dollar" },
@@ -150,6 +165,7 @@ function emptyHousehold() {
     categoryIcons: { income: {}, expense: {}, reserve: {} }, // { catName: emoji }
     categoryAddedMonth: { income: {}, expense: {}, reserve: {} }, // { catName: monthIdx } — hidden before this month
     categoryRemovedMonth: { income: {}, expense: {}, reserve: {} }, // { catName: monthIdx | null } — hidden from this month on
+    debts: [], // [{ id, name, icon, currentAmount, interestRate (annual %), paymentFrequency, paymentAmount }]
     preferences: {
       showPartnerInitials: true,
       numberFormat: "US",   // "US" = 1,234.56   ·   "EU" = 1.234,56
@@ -598,6 +614,7 @@ function Sidebar({ view, setView, household, onLogout, saveStatus }) {
     { key: "income", label: "Income", icon: Wallet },
     { key: "expenses", label: "Expenses", icon: Receipt },
     { key: "reserves", label: "Reserves", icon: PiggyBank },
+    { key: "debt", label: "Debt", icon: CreditCard },
     { key: "categories", label: "Settings", icon: SettingsIcon },
   ];
   const statusText = { saving: "Saving…", saved: "✓ Saved", error: "⚠ Save failed" }[saveStatus] || "";
@@ -1756,6 +1773,256 @@ function ReservesView({ household, update, selectedMonth, setSelectedMonth }) {
 }
 
 /* ============================================================
+   DEBT VIEW
+   ============================================================ */
+// Builds a payoff schedule: each period, interest accrues on the remaining balance
+// (annual rate ÷ payments per year), the payment covers that interest first and the
+// rest chips away at the principal. Capped at 600 periods (50 years) so a payment
+// too small to cover the interest can't loop forever.
+function buildDebtSchedule(currentAmount, interestRate, paymentFrequency, paymentAmount) {
+  const freq = DEBT_FREQUENCIES.find(f => f.key === paymentFrequency) || DEBT_FREQUENCIES[0];
+  const periodRate = (Number(interestRate) || 0) / 100 / freq.perYear;
+  let balance = Number(currentAmount) || 0;
+  const payment = Number(paymentAmount) || 0;
+  const rows = [];
+  if (balance <= 0 || payment <= 0) return { rows, willNeverPayOff: false, freq };
+
+  const firstInterest = balance * periodRate;
+  const willNeverPayOff = payment <= firstInterest && periodRate > 0;
+  if (willNeverPayOff) return { rows, willNeverPayOff, freq };
+
+  for (let period = 1; period <= 600 && balance > 0; period++) {
+    const interest = balance * periodRate;
+    const thisPayment = Math.min(payment, balance + interest);
+    const principal = thisPayment - interest;
+    balance = Math.max(0, balance - principal);
+    rows.push({ period, payment: thisPayment, interest, principal, balance });
+  }
+  return { rows, willNeverPayOff: false, freq };
+}
+
+function DebtCard({ debt, onChange, onDelete }) {
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const { rows, willNeverPayOff, freq } = buildDebtSchedule(debt.currentAmount, debt.interestRate, debt.paymentFrequency, debt.paymentAmount);
+  const totalInterest = rows.reduce((a, r) => a + r.interest, 0);
+  const years = rows.length > 0 ? Math.floor(rows.length / freq.perYear) : 0;
+  const remainder = rows.length > 0 ? rows.length % freq.perYear : 0;
+
+  return (
+    <Card style={{ marginBottom: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+        <h4 style={{ ...fontDisplay, fontSize: 18, margin: 0, color: COLORS.ink, display: "flex", alignItems: "center", gap: 6 }}>
+          {debt.icon && <span>{debt.icon} </span>}{debt.name}
+        </h4>
+        {confirmingDelete ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ ...fontBody, fontSize: 11, color: COLORS.inkSoft }}>Remove this debt?</span>
+            <button onClick={onDelete} style={{ ...fontBody, fontSize: 11, fontWeight: 700, color: "#fff", background: COLORS.alert, border: "none", borderRadius: 6, padding: "4px 8px", cursor: "pointer" }}>Yes, remove</button>
+            <button onClick={() => setConfirmingDelete(false)} style={{ ...fontBody, fontSize: 11, color: COLORS.inkSoft, background: "none", border: "none", cursor: "pointer" }}>Cancel</button>
+          </div>
+        ) : (
+          <button onClick={() => setConfirmingDelete(true)} title="Remove this debt" style={{ background: "none", border: "none", cursor: "pointer", color: COLORS.inkSoft, display: "flex" }}>
+            <X size={16} />
+          </button>
+        )}
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div>
+          <label style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: COLORS.inkSoft, display: "block", marginBottom: 4 }}>
+            Current amount owed
+          </label>
+          <div style={{ position: "relative" }}>
+            <span style={{ position: "absolute", left: 12, top: 9, ...fontBody, fontSize: 14, color: COLORS.inkSoft }}>{CURRENCY_SYMBOL}</span>
+            <input
+              type="number" onFocus={e => e.target.select()} value={debt.currentAmount || ""}
+              onChange={e => onChange({ ...debt, currentAmount: Number(e.target.value) })}
+              style={{ ...fontBody, width: "100%", boxSizing: "border-box", padding: "8px 10px 8px 26px", borderRadius: 8, border: `1.5px solid ${COLORS.border}`, fontSize: 14, outline: "none" }}
+            />
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 10 }}>
+          <div style={{ flex: 1 }}>
+            <label style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: COLORS.inkSoft, display: "block", marginBottom: 4 }}>
+              Interest rate (% per year)
+            </label>
+            <input
+              type="number" onFocus={e => e.target.select()} value={debt.interestRate || ""}
+              onChange={e => onChange({ ...debt, interestRate: Number(e.target.value) })}
+              placeholder="e.g. 5.5"
+              style={{ ...fontBody, width: "100%", boxSizing: "border-box", padding: "8px 10px", borderRadius: 8, border: `1.5px solid ${COLORS.border}`, fontSize: 14, outline: "none" }}
+            />
+          </div>
+          <div style={{ flex: 1 }}>
+            <label style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: COLORS.inkSoft, display: "block", marginBottom: 4 }}>
+              Payment amount
+            </label>
+            <div style={{ position: "relative" }}>
+              <span style={{ position: "absolute", left: 12, top: 9, ...fontBody, fontSize: 14, color: COLORS.inkSoft }}>{CURRENCY_SYMBOL}</span>
+              <input
+                type="number" onFocus={e => e.target.select()} value={debt.paymentAmount || ""}
+                onChange={e => onChange({ ...debt, paymentAmount: Number(e.target.value) })}
+                style={{ ...fontBody, width: "100%", boxSizing: "border-box", padding: "8px 10px 8px 26px", borderRadius: 8, border: `1.5px solid ${COLORS.border}`, fontSize: 14, outline: "none" }}
+              />
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <label style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: COLORS.inkSoft, display: "block", marginBottom: 4 }}>
+            How often you pay
+          </label>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {DEBT_FREQUENCIES.map(f => (
+              <Chip key={f.key} active={(debt.paymentFrequency || "monthly") === f.key} onClick={() => onChange({ ...debt, paymentFrequency: f.key })}>
+                {f.label}
+              </Chip>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ background: COLORS.lavender, borderRadius: 10, padding: "10px 12px" }}>
+          {willNeverPayOff ? (
+            <p style={{ ...fontBody, fontSize: 12, color: COLORS.alert, fontWeight: 700, margin: 0 }}>
+              ⚠ This payment doesn't cover the interest — the balance will keep growing. Raise the payment amount.
+            </p>
+          ) : rows.length === 0 ? (
+            <p style={{ ...fontBody, fontSize: 12, color: COLORS.inkSoft, margin: 0 }}>
+              Fill in the amount, rate, and payment to see a payoff schedule.
+            </p>
+          ) : (
+            <>
+              <p style={{ ...fontBody, fontSize: 12, color: COLORS.primary, fontWeight: 700, margin: "0 0 2px" }}>
+                Paid off in {rows.length} {freq.label.toLowerCase()} payments
+                {years > 0 && ` (${years}y${remainder > 0 ? ` ${remainder}${freq.key === "monthly" ? "mo" : ""}` : ""})`}
+              </p>
+              <p style={{ ...fontBody, fontSize: 11, color: COLORS.inkSoft, margin: 0 }}>
+                Total interest paid: {fmt(totalInterest)}
+              </p>
+            </>
+          )}
+        </div>
+
+        {rows.length > 0 && (
+          <div>
+            <button
+              onClick={() => setScheduleOpen(o => !o)}
+              style={{
+                width: "100%", background: "none", border: "none", cursor: "pointer", display: "flex",
+                alignItems: "center", justifyContent: "space-between", padding: 0,
+              }}
+            >
+              <span style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: COLORS.inkSoft }}>Payoff schedule</span>
+              {scheduleOpen ? <ChevronLeft size={16} color={COLORS.inkSoft} style={{ transform: "rotate(90deg)" }} /> : <ChevronLeft size={16} color={COLORS.inkSoft} style={{ transform: "rotate(-90deg)" }} />}
+            </button>
+            {scheduleOpen && (
+              <div style={{ maxHeight: 240, overflowY: "auto", marginTop: 8 }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", ...fontBody, fontSize: 11 }}>
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: "left", padding: "4px 6px", color: COLORS.inkSoft, fontWeight: 600, position: "sticky", top: 0, background: COLORS.card }}>#</th>
+                      <th style={{ textAlign: "right", padding: "4px 6px", color: COLORS.inkSoft, fontWeight: 600, position: "sticky", top: 0, background: COLORS.card }}>Payment</th>
+                      <th style={{ textAlign: "right", padding: "4px 6px", color: COLORS.inkSoft, fontWeight: 600, position: "sticky", top: 0, background: COLORS.card }}>Interest</th>
+                      <th style={{ textAlign: "right", padding: "4px 6px", color: COLORS.inkSoft, fontWeight: 600, position: "sticky", top: 0, background: COLORS.card }}>Principal</th>
+                      <th style={{ textAlign: "right", padding: "4px 6px", color: COLORS.inkSoft, fontWeight: 600, position: "sticky", top: 0, background: COLORS.card }}>Balance</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map(r => (
+                      <tr key={r.period} style={{ borderTop: `1px solid ${COLORS.border}` }}>
+                        <td style={{ padding: "4px 6px" }}>{r.period}</td>
+                        <td style={{ padding: "4px 6px", textAlign: "right" }}>{fmt(r.payment)}</td>
+                        <td style={{ padding: "4px 6px", textAlign: "right", color: COLORS.alert }}>{fmt(r.interest)}</td>
+                        <td style={{ padding: "4px 6px", textAlign: "right", color: COLORS.success }}>{fmt(r.principal)}</td>
+                        <td style={{ padding: "4px 6px", textAlign: "right", fontWeight: 700 }}>{fmt(r.balance)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+function DebtView({ household, update }) {
+  const [val, setVal] = useState("");
+  const [icon, setIcon] = useState(null);
+  const debts = household.debts || [];
+
+  const addDebt = (name, ic) => {
+    const trimmed = (name || "").trim();
+    if (!trimmed) return;
+    update(h => ({
+      ...h,
+      debts: [...(h.debts || []), {
+        id: `${Date.now()}-${trimmed}`, name: trimmed, icon: ic || null,
+        currentAmount: 0, interestRate: 0, paymentFrequency: "monthly", paymentAmount: 0,
+      }],
+    }));
+  };
+  const updateDebt = (id, next) => {
+    update(h => ({ ...h, debts: (h.debts || []).map(d => d.id === id ? next : d) }));
+  };
+  const deleteDebt = (id) => {
+    update(h => ({ ...h, debts: (h.debts || []).filter(d => d.id !== id) }));
+  };
+
+  const totalDebt = debts.reduce((a, d) => a + (Number(d.currentAmount) || 0), 0);
+
+  return (
+    <div className="page-content" style={{ flex: 1 }}>
+      <h1 style={{ ...fontDisplay, fontSize: 30, color: COLORS.ink, margin: "0 0 4px" }}>Debt</h1>
+      <p style={{ ...fontBody, color: COLORS.inkSoft, margin: "0 0 8px", fontSize: 14, maxWidth: 680 }}>
+        Track what you owe and see a payoff schedule. Interest rates are entered as an annual rate
+        (the usual way loans, mortgages, and credit cards quote them) — pick how often you actually pay below.
+      </p>
+
+      {debts.length > 0 && (
+        <div className="kpi-row" style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 20, marginTop: 16 }}>
+          <KpiCard icon={CreditCard} label="Total debt" value={totalDebt} tone={COLORS.alert} />
+        </div>
+      )}
+
+      {debts.length === 0 ? (
+        <Card style={{ textAlign: "center", padding: 40, marginTop: 20 }}>
+          <p style={{ ...fontBody, color: COLORS.inkSoft }}>No debts added yet — add one below.</p>
+        </Card>
+      ) : (
+        <div className="two-col-grid" style={{ marginTop: 20 }}>
+          {debts.map(d => (
+            <DebtCard key={d.id} debt={d} onChange={(next) => updateDebt(d.id, next)} onDelete={() => deleteDebt(d.id)} />
+          ))}
+        </div>
+      )}
+
+      <Card style={{ marginTop: 20 }}>
+        <h3 style={{ ...fontDisplay, fontSize: 17, margin: "0 0 12px", color: COLORS.ink }}>Add a debt</h3>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+          {SUGGESTED.debt.filter(s => !debts.some(d => d.name === s)).map(s => (
+            <Chip key={s} onClick={() => addDebt(s, SUGGESTED_ICONS.debt?.[s])}>
+              {SUGGESTED_ICONS.debt?.[s] ? `${SUGGESTED_ICONS.debt[s]} ` : "+ "}{s}
+            </Chip>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <IconPicker icon={icon} setIcon={setIcon} />
+          <input value={val} onChange={e => setVal(e.target.value)} onKeyDown={e => e.key === "Enter" && (addDebt(val, icon), setVal(""), setIcon(null))}
+            placeholder="Add your own debt…"
+            style={{ ...fontBody, flex: 1, padding: "9px 12px", borderRadius: 8, border: `1.5px solid ${COLORS.border}`, fontSize: 13, outline: "none" }} />
+          <button onClick={() => { addDebt(val, icon); setVal(""); setIcon(null); }} style={{ ...fontBody, background: COLORS.primary, color: "#fff", border: "none", borderRadius: 8, padding: "0 14px", fontWeight: 700, cursor: "pointer" }}>Add</button>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+/* ============================================================
    CATEGORIES VIEW
    ============================================================ */
 const ICON_CHOICES = ["💰","💵","🏠","🚗","🍔","🛒","🎬","✈️","💊","🎁","⚡","📱","🏥","🎓","❤️","🐶","👶","☕","🧾","💼","📈","🛡️","🔧","🎉"];
@@ -2205,6 +2472,7 @@ function normalizeHousehold(h) {
     releasedAmount: h.releasedAmount || {},
     archivedReserves: h.archivedReserves || [],
     reserveGoals: h.reserveGoals || {},
+    debts: h.debts || [],
     sameEveryMonth: { ...empty.sameEveryMonth, ...(h.sameEveryMonth || {}) },
     copyActualFromExpected: { ...empty.copyActualFromExpected, ...(h.copyActualFromExpected || {}) },
     preferences: { ...empty.preferences, ...(h.preferences || {}) },
@@ -2686,6 +2954,7 @@ export default function HouseholdBudgetApp() {
             {view === "income" && <IncomeView household={household} update={update} selectedMonth={selectedMonth} />}
             {view === "expenses" && <ExpensesView household={household} update={update} selectedMonth={selectedMonth} />}
             {view === "reserves" && <ReservesView household={household} update={update} selectedMonth={selectedMonth} />}
+            {view === "debt" && <DebtView household={household} update={update} />}
             {view === "categories" && <CategoriesView household={household} update={update} sessionPassword={sessionPassword} onRename={handleRename} />}
           </div>
         </div>
