@@ -7,7 +7,7 @@ import {
 import {
   Home, Wallet, PiggyBank, Receipt, Tags, ChevronRight, ChevronLeft,
   Plus, X, Check, Users, TrendingUp, TrendingDown, Sparkles, Lock,
-  UserPlus, Pencil
+  UserPlus, Pencil, GripVertical
 } from "lucide-react";
 
 /* ============================================================
@@ -848,7 +848,10 @@ function IncomeGoalCard({ cat, icon, planned, actual, ytd, sameEveryMonth, copyF
   const [expectedOpen, setExpectedOpen] = useState(false);
   return (
     <Card style={{ marginBottom: 16 }}>
-      <h4 style={{ ...fontDisplay, fontSize: 18, margin: "0 0 14px", color: COLORS.ink }}>{icon && <span>{icon} </span>}{cat}</h4>
+      <h4 style={{ ...fontDisplay, fontSize: 18, margin: "0 0 14px", color: COLORS.ink, display: "flex", alignItems: "center", gap: 6 }}>
+        <GripVertical size={16} color={COLORS.inkSoft} style={{ cursor: "grab", flexShrink: 0 }} />
+        {icon && <span>{icon} </span>}{cat}
+      </h4>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <div>
           <button
@@ -911,6 +914,19 @@ function IncomeGoalCard({ cat, icon, planned, actual, ytd, sameEveryMonth, copyF
 }
 
 function IncomeView({ household, update, selectedMonth, setSelectedMonth }) {
+  const [draggedCat, setDraggedCat] = useState(null);
+  const reorderIncome = (fromCat, toCat) => {
+    if (fromCat === toCat) return;
+    update(h => {
+      const arr = [...h.categories.income];
+      const fromIdx = arr.indexOf(fromCat);
+      const toIdx = arr.indexOf(toCat);
+      if (fromIdx === -1 || toIdx === -1) return h;
+      arr.splice(fromIdx, 1);
+      arr.splice(toIdx, 0, fromCat);
+      return { ...h, categories: { ...h.categories, income: arr } };
+    });
+  };
   const setPlanned = (cat, val) => {
     update(h => {
       const same = h.sameEveryMonth.income[cat];
@@ -999,20 +1015,29 @@ function IncomeView({ household, update, selectedMonth, setSelectedMonth }) {
       ) : (
         <div className="income-grid" style={{ marginTop: 20 }}>
           {household.categories.income.map(cat => (
-            <IncomeGoalCard
+            <div
               key={cat}
-              cat={cat}
-              icon={household.categoryIcons?.income?.[cat]}
-              planned={(household.budget.income[cat] || zeros())[selectedMonth]}
-              actual={(household.actual.income[cat] || zeros())[selectedMonth]}
-              ytd={(household.actual.income[cat] || zeros()).slice(0, selectedMonth + 1).reduce((a, b) => a + b, 0)}
-              sameEveryMonth={!!household.sameEveryMonth.income[cat]}
-              copyFromExpected={!!normalizeMonthFlags(household.copyActualFromExpected.income[cat])[selectedMonth]}
-              onPlannedChange={(v) => setPlanned(cat, v)}
-              onActualChange={(v) => setActual(cat, v)}
-              onToggleSame={(checked) => toggleSame(cat, checked)}
-              onToggleCopy={(checked) => toggleCopy(cat, checked)}
-            />
+              draggable
+              onDragStart={() => setDraggedCat(cat)}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={() => { if (draggedCat) reorderIncome(draggedCat, cat); setDraggedCat(null); }}
+              onDragEnd={() => setDraggedCat(null)}
+              style={{ opacity: draggedCat === cat ? 0.5 : 1 }}
+            >
+              <IncomeGoalCard
+                cat={cat}
+                icon={household.categoryIcons?.income?.[cat]}
+                planned={(household.budget.income[cat] || zeros())[selectedMonth]}
+                actual={(household.actual.income[cat] || zeros())[selectedMonth]}
+                ytd={(household.actual.income[cat] || zeros()).slice(0, selectedMonth + 1).reduce((a, b) => a + b, 0)}
+                sameEveryMonth={!!household.sameEveryMonth.income[cat]}
+                copyFromExpected={!!normalizeMonthFlags(household.copyActualFromExpected.income[cat])[selectedMonth]}
+                onPlannedChange={(v) => setPlanned(cat, v)}
+                onActualChange={(v) => setActual(cat, v)}
+                onToggleSame={(checked) => toggleSame(cat, checked)}
+                onToggleCopy={(checked) => toggleCopy(cat, checked)}
+              />
+            </div>
           ))}
         </div>
       )}
