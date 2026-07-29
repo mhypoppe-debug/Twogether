@@ -861,7 +861,7 @@ function IncomeGoalCard({ cat, icon, planned, actual, sameEveryMonth, copyFromEx
             <span style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: COLORS.inkSoft }}>
               Expected this month: {fmt(planned)}
             </span>
-            <ChevronLeft size={16} color={COLORS.inkSoft} style={{ transform: expectedOpen ? "rotate(-90deg)" : "rotate(90deg)", flexShrink: 0 }} />
+            <ChevronLeft size={16} color={COLORS.inkSoft} style={{ transform: expectedOpen ? "rotate(90deg)" : "rotate(-90deg)", flexShrink: 0 }} />
           </button>
           {expectedOpen && (
             <>
@@ -1079,7 +1079,7 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
           }}
         >
           <h3 style={{ ...fontDisplay, fontSize: 17, margin: 0, color: COLORS.ink }}>Monthly budget</h3>
-          {budgetOpen ? <ChevronLeft size={18} color={COLORS.inkSoft} style={{ transform: "rotate(-90deg)" }} /> : <ChevronLeft size={18} color={COLORS.inkSoft} style={{ transform: "rotate(90deg)" }} />}
+          {budgetOpen ? <ChevronLeft size={18} color={COLORS.inkSoft} style={{ transform: "rotate(90deg)" }} /> : <ChevronLeft size={18} color={COLORS.inkSoft} style={{ transform: "rotate(-90deg)" }} />}
         </button>
         {budgetOpen && (household.categories.expense.length === 0 ? (
           <p style={{ ...fontBody, fontSize: 13, color: COLORS.inkSoft }}>No expense categories yet — add some in the Categories tab.</p>
@@ -1873,7 +1873,7 @@ function PreferencesPanel({ household, update }) {
         }}
       >
         <h3 style={{ ...fontDisplay, fontSize: 17, margin: 0, color: COLORS.ink }}>Preferences</h3>
-        {open ? <ChevronLeft size={18} color={COLORS.inkSoft} style={{ transform: "rotate(-90deg)" }} /> : <ChevronLeft size={18} color={COLORS.inkSoft} style={{ transform: "rotate(90deg)" }} />}
+        {open ? <ChevronLeft size={18} color={COLORS.inkSoft} style={{ transform: "rotate(90deg)" }} /> : <ChevronLeft size={18} color={COLORS.inkSoft} style={{ transform: "rotate(-90deg)" }} />}
       </button>
 
       {open && (
