@@ -771,8 +771,8 @@ function Dashboard({ household, selectedMonth, setSelectedMonth }) {
   }));
 
   const pieData = [
-    ...household.categories.expense.map(c => ({ name: c, value: (household.actual.expense[c] || zeros())[selectedMonth] })),
-    ...household.categories.reserve.map(c => ({ name: c, value: (household.actual.reserve[c] || zeros())[selectedMonth] })),
+    ...household.categories.expense.map(c => ({ name: c, value: (household.actual.expense[c] || zeros()).slice(0, selectedMonth + 1).reduce((a, b) => a + b, 0) })),
+    ...household.categories.reserve.map(c => ({ name: c, value: (household.actual.reserve[c] || zeros()).slice(0, selectedMonth + 1).reduce((a, b) => a + b, 0) })),
   ].filter(d => d.value > 0);
 
   const noData = household.transactions.length === 0;
@@ -819,9 +819,9 @@ function Dashboard({ household, selectedMonth, setSelectedMonth }) {
             </ResponsiveContainer>
           </Card>
           <Card style={{ flex: 1, minWidth: 260 }}>
-            <h3 style={{ ...fontDisplay, fontSize: 16, margin: "0 0 16px", color: COLORS.ink }}>{MONTHS[selectedMonth]}'s spending</h3>
+            <h3 style={{ ...fontDisplay, fontSize: 16, margin: "0 0 16px", color: COLORS.ink }}>Spending year to date</h3>
             {pieData.length === 0 ? (
-              <p style={{ ...fontBody, fontSize: 13, color: COLORS.inkSoft }}>No spending logged for {MONTHS[selectedMonth]} yet.</p>
+              <p style={{ ...fontBody, fontSize: 13, color: COLORS.inkSoft }}>No spending logged yet.</p>
             ) : (
               <ResponsiveContainer width="100%" height={240}>
                 <PieChart>
