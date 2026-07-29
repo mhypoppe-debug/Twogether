@@ -828,11 +828,6 @@ function Dashboard({ household, selectedMonth, setSelectedMonth }) {
   const spendingMax = Math.max(1, ...spendingData.map(d => d.value));
   const spendingTotal = spendingData.reduce((a, d) => a + d.value, 0);
 
-  const incomeBreakdown = household.categories.income
-    .map(c => ({ name: c, icon: household.categoryIcons?.income?.[c], value: (household.actual.income[c] || zeros()).slice(0, selectedMonth + 1).reduce((a, b) => a + b, 0) }))
-    .filter(d => d.value > 0)
-    .sort((a, b) => b.value - a.value);
-
   // Mirrors the per-category logic inside computeKpis, so these totals add up to kpis.reservedTotal.
   const reserveBreakdown = household.categories.reserve
     .map(cat => {
@@ -882,7 +877,6 @@ function Dashboard({ household, selectedMonth, setSelectedMonth }) {
         <KpiCard icon={Wallet} label="Bank balance" value={kpis.bankBalance} tone={COLORS.accent} />
         <KpiCard icon={Sparkles} label="Free to spend" value={kpis.freeToSpend} tone={COLORS.gold} />
         <KpiCard icon={PiggyBank} label="Reserved" value={kpis.reservedTotal} tone={"#6B4C8A"} breakdown={reserveBreakdown} />
-        <KpiCard icon={TrendingUp} label="Income (YTD)" value={kpis.incomeYtd} tone={COLORS.primary} breakdown={incomeBreakdown} />
         {totalDebt > 0 && (
           <KpiCard icon={CreditCard} label="Debt" value={totalDebt} tone={COLORS.alert} breakdown={debtBreakdown} />
         )}
@@ -1101,12 +1095,22 @@ function IncomeView({ household, update, selectedMonth, setSelectedMonth }) {
     .map(c => ({ name: c, value: (household.actual.income[c] || zeros())[selectedMonth] }))
     .filter(d => d.value > 0);
 
+  const incomeBreakdown = household.categories.income
+    .map(c => ({ name: c, icon: household.categoryIcons?.income?.[c], value: (household.actual.income[c] || zeros()).slice(0, selectedMonth + 1).reduce((a, b) => a + b, 0) }))
+    .filter(d => d.value > 0)
+    .sort((a, b) => b.value - a.value);
+  const incomeYtd = incomeBreakdown.reduce((a, d) => a + d.value, 0);
+
   return (
     <div className="page-content" style={{ flex: 1 }}>
       <h1 style={{ ...fontDisplay, fontSize: 30, color: COLORS.ink, margin: "0 0 4px" }}>Income</h1>
       <p style={{ ...fontBody, color: COLORS.inkSoft, margin: "0 0 8px", fontSize: 14, maxWidth: 680 }}>
         Set what you expect from each source this month, then fill in what actually came in.
       </p>
+
+      <div className="kpi-row" style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 16 }}>
+        <KpiCard icon={TrendingUp} label="Income (YTD)" value={incomeYtd} tone={COLORS.primary} breakdown={incomeBreakdown} />
+      </div>
 
       {incomeData.length > 0 && (
         <Card style={{ marginTop: 16, marginBottom: 4, maxWidth: 420 }}>
