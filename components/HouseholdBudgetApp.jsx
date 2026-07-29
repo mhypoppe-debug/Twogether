@@ -802,6 +802,24 @@ function Dashboard({ household, selectedMonth, setSelectedMonth }) {
     .filter(d => d.value > 0)
     .sort((a, b) => b.value - a.value);
 
+  // Mirrors the per-category logic inside computeKpis, so these totals add up to kpis.reservedTotal.
+  const reserveBreakdown = household.categories.reserve
+    .map(cat => {
+      const arr = household.actual.reserve[cat] || zeros();
+      const releasedIdx = household.releasedThrough[cat];
+      const saved = arr.slice(0, selectedMonth + 1).reduce((a, b) => a + b, 0);
+      let reservedAmt = saved;
+      if (releasedIdx !== null && releasedIdx !== undefined) {
+        const savedThroughRelease = arr.slice(0, Math.min(releasedIdx, selectedMonth) + 1).reduce((a, b) => a + b, 0);
+        const paidAmount = household.releasedAmount?.[cat];
+        const accrued = paidAmount != null ? Math.min(paidAmount, savedThroughRelease) : savedThroughRelease;
+        reservedAmt = Math.max(0, saved - accrued);
+      }
+      return { name: cat, icon: household.categoryIcons?.reserve?.[cat], value: reservedAmt };
+    })
+    .filter(d => d.value > 0)
+    .sort((a, b) => b.value - a.value);
+
   const noData = household.transactions.length === 0;
 
   return (
@@ -812,7 +830,7 @@ function Dashboard({ household, selectedMonth, setSelectedMonth }) {
       <div className="kpi-row" style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 20 }}>
         <KpiCard icon={Wallet} label="Bank balance" value={kpis.bankBalance} tone={COLORS.accent} />
         <KpiCard icon={Sparkles} label="Free to spend" value={kpis.freeToSpend} tone={COLORS.gold} />
-        <KpiCard icon={PiggyBank} label="Reserved" value={kpis.reservedTotal} tone={"#6B4C8A"} />
+        <KpiCard icon={PiggyBank} label="Reserved" value={kpis.reservedTotal} tone={"#6B4C8A"} breakdown={reserveBreakdown} />
         <KpiCard icon={TrendingUp} label="Income (YTD)" value={kpis.incomeYtd} tone={COLORS.primary} breakdown={incomeBreakdown} />
       </div>
 
