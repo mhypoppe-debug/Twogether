@@ -849,8 +849,8 @@ function IncomeGoalCard({ cat, icon, planned, actual, sameEveryMonth, copyFromEx
   return (
     <Card style={{ marginBottom: 16 }}>
       <h4 style={{ ...fontDisplay, fontSize: 18, margin: "0 0 14px", color: COLORS.ink }}>{icon && <span>{icon} </span>}{cat}</h4>
-      <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
-        <div style={{ flex: "1 1 220px", minWidth: 220 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div>
           <button
             onClick={() => setExpectedOpen(o => !o)}
             style={{
@@ -877,7 +877,7 @@ function IncomeGoalCard({ cat, icon, planned, actual, sameEveryMonth, copyFromEx
             </>
           )}
         </div>
-        <div style={{ flex: "1 1 240px", minWidth: 240 }}>
+        <div>
           <div style={{ height: 14, width: "100%", background: COLORS.lavender, borderRadius: 8, overflow: "hidden", marginBottom: 6 }}>
             <div style={{ height: "100%", width: `${pct}%`, background: `linear-gradient(90deg, ${COLORS.gold}, ${COLORS.primary})`, transition: "width .4s" }} />
           </div>
@@ -974,7 +974,7 @@ function IncomeView({ household, update, selectedMonth, setSelectedMonth }) {
           <p style={{ ...fontBody, color: COLORS.inkSoft }}>No income categories yet — add one in Categories.</p>
         </Card>
       ) : (
-        <div style={{ marginTop: 20 }}>
+        <div className="income-grid" style={{ marginTop: 20 }}>
           {household.categories.income.map(cat => (
             <IncomeGoalCard
               key={cat}
@@ -2475,6 +2475,7 @@ function ResponsiveStyles() {
       .page-content { padding: 32px; }
       .kpi-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
       .kpi-card { flex: 1; min-width: 180px; }
+      .income-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; align-items: start; }
 
       @media (max-width: 760px) {
         .app-shell { flex-direction: column; }
@@ -2501,6 +2502,7 @@ function ResponsiveStyles() {
         .kpi-card .kpi-value { font-size: 15px !important; }
 
         table { font-size: 11px !important; }
+        .income-grid { grid-template-columns: 1fr !important; }
       }
     `}</style>
   );
