@@ -7,7 +7,7 @@ import {
 import {
   Home, Wallet, PiggyBank, Receipt, ChevronRight, ChevronLeft,
   Plus, X, Check, Users, TrendingUp, TrendingDown, Sparkles, Lock,
-  UserPlus, Pencil, GripVertical, Settings as SettingsIcon
+  UserPlus, Pencil, GripVertical
 } from "lucide-react";
 
 /* ============================================================
@@ -584,7 +584,7 @@ function Sidebar({ view, setView, household, onLogout, saveStatus }) {
     { key: "income", label: "Income", icon: Wallet },
     { key: "expenses", label: "Expenses", icon: Receipt },
     { key: "reserves", label: "Reserves", icon: PiggyBank },
-    { key: "categories", label: "Settings", icon: SettingsIcon },
+    { key: "categories", label: "Settings", icon: null },
   ];
   const statusText = { saving: "Saving…", saved: "✓ Saved", error: "⚠ Save failed" }[saveStatus] || "";
   return (
@@ -609,7 +609,7 @@ function Sidebar({ view, setView, household, onLogout, saveStatus }) {
               color: "#fff",
             }}
           >
-            <Icon size={17} /> <span className="sidebar-nav-label">{label}</span>
+            {Icon && <Icon size={17} />} <span className="sidebar-nav-label">{label}</span>
           </button>
         ))}
       </div>
