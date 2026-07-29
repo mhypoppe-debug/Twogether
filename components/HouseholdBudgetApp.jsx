@@ -289,7 +289,7 @@ function KpiCard({ icon: Icon, label, value, delta, tone, breakdown }) {
           {breakdown.map(b => (
             <div key={b.name} style={{ display: "flex", justifyContent: "space-between", gap: 16, fontSize: 12, color: COLORS.ink, padding: "3px 0" }}>
               <span>{b.icon && <span>{b.icon} </span>}{b.name}</span>
-              <span style={{ fontWeight: 700 }}>{fmt(b.value)}</span>
+              <span style={{ fontWeight: 700, whiteSpace: "nowrap", paddingLeft: 10 }}>{b.display ?? fmt(b.value)}</span>
             </div>
           ))}
         </div>
@@ -851,6 +851,26 @@ function Dashboard({ household, selectedMonth, setSelectedMonth }) {
     .filter(d => d.value > 0)
     .sort((a, b) => b.value - a.value);
 
+  // Each debt's payoff date (if a first-payment date is set) or payments remaining otherwise.
+  const debtBreakdown = (household.debts || [])
+    .filter(d => (Number(d.currentAmount) || 0) > 0)
+    .map(d => {
+      const paymentIncludesInterest = d.paymentIncludesInterest ?? true;
+      const { rows, freq } = buildDebtSchedule(d.currentAmount, d.interestRate, d.paymentFrequency, d.paymentAmount, paymentIncludesInterest, d.paymentOverrides || {});
+      let display;
+      if (rows.length === 0) {
+        display = "—";
+      } else if (d.firstPaymentDate) {
+        const monthsPerPeriod = 12 / freq.perYear;
+        display = formatDate(addMonthsToDateStr(d.firstPaymentDate, (rows.length - 1) * monthsPerPeriod));
+      } else {
+        display = `${rows.length} payments left`;
+      }
+      return { name: d.name, icon: d.icon, value: Number(d.currentAmount) || 0, display };
+    })
+    .sort((a, b) => b.value - a.value);
+  const totalDebt = (household.debts || []).reduce((a, d) => a + (Number(d.currentAmount) || 0), 0);
+
   const noData = household.transactions.length === 0;
 
   return (
@@ -863,6 +883,9 @@ function Dashboard({ household, selectedMonth, setSelectedMonth }) {
         <KpiCard icon={Sparkles} label="Free to spend" value={kpis.freeToSpend} tone={COLORS.gold} />
         <KpiCard icon={PiggyBank} label="Reserved" value={kpis.reservedTotal} tone={"#6B4C8A"} breakdown={reserveBreakdown} />
         <KpiCard icon={TrendingUp} label="Income (YTD)" value={kpis.incomeYtd} tone={COLORS.primary} breakdown={incomeBreakdown} />
+        {totalDebt > 0 && (
+          <KpiCard icon={CreditCard} label="Debt" value={totalDebt} tone={COLORS.alert} breakdown={debtBreakdown} />
+        )}
       </div>
 
       <div style={{ marginBottom: 20 }}>
@@ -1776,14 +1799,14 @@ function ReservesView({ household, update, selectedMonth, setSelectedMonth }) {
    DEBT VIEW
    ============================================================ */
 // Builds a payoff schedule: each period, interest accrues on the remaining balance
-// (annual rate ÷ payments per year). If paymentIncludesInterest, the regular payment is
-// fixed and interest comes out of it first (standard amortization); otherwise the regular
-// payment is pure principal and interest is extra, added on top. `paymentOverrides` lets
-// specific payment numbers use a different total amount that period (e.g. paid extra, or
-// skipped) without changing the regular payment going forward — an override always means
-// "this is the total amount paid that period," regardless of the inclusive/exclusive mode.
-// Capped at 600 periods (50 years) so a too-small payment can't loop forever.
-function buildDebtSchedule(currentAmount, interestRate, paymentFrequency, paymentAmount, paymentIncludesInterest, paymentOverrides = {}) {
+// (annual rate ÷ payments per year) — interest is always computed, never something you
+// set directly. If paymentIncludesInterest, the regular payment is fixed and interest
+// comes out of it first (standard amortization) to get the principal; otherwise the
+// regular payment IS the principal and interest is extra, added on top for display.
+// `principalOverrides` lets specific payment numbers pay down a different amount of
+// principal that period, without changing the regular payment going forward. Capped at
+// 600 periods (50 years) so a too-small payment can't loop forever.
+function buildDebtSchedule(currentAmount, interestRate, paymentFrequency, paymentAmount, paymentIncludesInterest, principalOverrides = {}) {
   const freq = DEBT_FREQUENCIES.find(f => f.key === paymentFrequency) || DEBT_FREQUENCIES[0];
   const periodRate = (Number(interestRate) || 0) / 100 / freq.perYear;
   let balance = Number(currentAmount) || 0;
@@ -1792,16 +1815,16 @@ function buildDebtSchedule(currentAmount, interestRate, paymentFrequency, paymen
   if (balance <= 0 || basePayment <= 0) return { rows, willNeverPayOff: false, freq };
 
   const firstInterest = balance * periodRate;
-  const noOverrideAtStart = paymentOverrides[1] == null;
+  const noOverrideAtStart = principalOverrides[1] == null;
   const willNeverPayOff = paymentIncludesInterest && basePayment <= firstInterest && periodRate > 0 && noOverrideAtStart;
   if (willNeverPayOff) return { rows, willNeverPayOff, freq };
 
   for (let period = 1; period <= 600 && balance > 0; period++) {
     const interest = balance * periodRate;
-    const override = paymentOverrides[period];
+    const override = principalOverrides[period];
     let principal;
     if (override != null) {
-      principal = Math.min(Math.max(0, Number(override) - interest), balance);
+      principal = Math.min(Math.max(0, Number(override)), balance);
     } else if (paymentIncludesInterest) {
       principal = Math.min(Math.max(0, basePayment - interest), balance);
     } else {
@@ -2096,7 +2119,7 @@ function DebtView({ household, update }) {
           <p style={{ ...fontBody, color: COLORS.inkSoft }}>No debts added yet — add one below.</p>
         </Card>
       ) : (
-        <div className="two-col-grid" style={{ marginTop: 20 }}>
+        <div className="debt-grid" style={{ marginTop: 20 }}>
           {debts.map(d => (
             <DebtCard key={d.id} debt={d} onChange={(next) => updateDebt(d.id, next)} onDelete={() => deleteDebt(d.id)} />
           ))}
@@ -3087,6 +3110,7 @@ function ResponsiveStyles() {
       .kpi-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
       .kpi-card { flex: 1; min-width: 180px; }
       .two-col-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; align-items: start; }
+      .debt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(480px, 1fr)); gap: 16px; align-items: start; }
 
       @media (max-width: 760px) {
         .app-shell { flex-direction: column; }
@@ -3114,6 +3138,7 @@ function ResponsiveStyles() {
 
         table { font-size: 11px !important; }
         .two-col-grid { grid-template-columns: 1fr !important; }
+        .debt-grid { grid-template-columns: 1fr !important; }
       }
     `}</style>
   );
