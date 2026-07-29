@@ -1778,9 +1778,11 @@ function ReservesView({ household, update, selectedMonth, setSelectedMonth }) {
 // Builds a payoff schedule: each period, interest accrues on the remaining balance
 // (annual rate ÷ payments per year). If paymentIncludesInterest, the payment is fixed
 // and interest comes out of it first (standard amortization); otherwise the payment is
-// pure principal and interest is extra, added on top. Capped at 600 periods (50 years)
-// so a too-small payment can't loop forever.
-function buildDebtSchedule(currentAmount, interestRate, paymentFrequency, paymentAmount, paymentIncludesInterest) {
+// pure principal and interest is extra, added on top. `extraPayments` are one-off top-ups
+// for specific payment numbers (e.g. "pay an extra €200 on payment #3") that don't change
+// the regular payment amount going forward. Capped at 600 periods (50 years) so a
+// too-small payment can't loop forever.
+function buildDebtSchedule(currentAmount, interestRate, paymentFrequency, paymentAmount, paymentIncludesInterest, extraPayments = []) {
   const freq = DEBT_FREQUENCIES.find(f => f.key === paymentFrequency) || DEBT_FREQUENCIES[0];
   const periodRate = (Number(interestRate) || 0) / 100 / freq.perYear;
   let balance = Number(currentAmount) || 0;
@@ -1788,26 +1790,34 @@ function buildDebtSchedule(currentAmount, interestRate, paymentFrequency, paymen
   const rows = [];
   if (balance <= 0 || payment <= 0) return { rows, willNeverPayOff: false, freq };
 
+  const extraByPeriod = {};
+  (extraPayments || []).forEach(e => {
+    extraByPeriod[e.period] = (extraByPeriod[e.period] || 0) + (Number(e.amount) || 0);
+  });
+  const hasExtras = Object.keys(extraByPeriod).length > 0;
+
   if (paymentIncludesInterest) {
     // The payment is fixed; interest comes out of it first, whatever's left reduces the principal.
     const firstInterest = balance * periodRate;
-    const willNeverPayOff = payment <= firstInterest && periodRate > 0;
+    const willNeverPayOff = payment <= firstInterest && periodRate > 0 && !hasExtras;
     if (willNeverPayOff) return { rows, willNeverPayOff, freq };
 
     for (let period = 1; period <= 600 && balance > 0; period++) {
       const interest = balance * periodRate;
-      const thisPayment = Math.min(payment, balance + interest);
-      const principal = thisPayment - interest;
+      const basePrincipal = Math.max(0, payment - interest);
+      const extra = extraByPeriod[period] || 0;
+      const principal = Math.min(basePrincipal + extra, balance);
       balance = Math.max(0, balance - principal);
-      rows.push({ period, payment: thisPayment, interest, principal, balance });
+      rows.push({ period, payment: principal + interest, interest, principal, extra, balance });
     }
   } else {
     // The payment is pure principal; interest is extra, added on top each period.
     for (let period = 1; period <= 600 && balance > 0; period++) {
       const interest = balance * periodRate;
-      const principal = Math.min(payment, balance);
+      const extra = extraByPeriod[period] || 0;
+      const principal = Math.min(payment + extra, balance);
       balance = Math.max(0, balance - principal);
-      rows.push({ period, payment: principal + interest, interest, principal, balance });
+      rows.push({ period, payment: principal + interest, interest, principal, extra, balance });
     }
   }
   return { rows, willNeverPayOff: false, freq };
@@ -1816,8 +1826,22 @@ function buildDebtSchedule(currentAmount, interestRate, paymentFrequency, paymen
 function DebtCard({ debt, onChange, onDelete }) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [extraPeriodInput, setExtraPeriodInput] = useState("");
+  const [extraAmountInput, setExtraAmountInput] = useState("");
   const paymentIncludesInterest = debt.paymentIncludesInterest ?? true;
-  const { rows, willNeverPayOff, freq } = buildDebtSchedule(debt.currentAmount, debt.interestRate, debt.paymentFrequency, debt.paymentAmount, paymentIncludesInterest);
+  const extraPayments = debt.extraPayments || [];
+  const { rows, willNeverPayOff, freq } = buildDebtSchedule(debt.currentAmount, debt.interestRate, debt.paymentFrequency, debt.paymentAmount, paymentIncludesInterest, extraPayments);
+
+  const addExtra = () => {
+    const period = Math.round(Number(extraPeriodInput));
+    const amount = Number(extraAmountInput);
+    if (!period || period < 1 || !amount || amount <= 0) return;
+    onChange({ ...debt, extraPayments: [...extraPayments, { period, amount }] });
+    setExtraPeriodInput(""); setExtraAmountInput("");
+  };
+  const removeExtra = (idx) => {
+    onChange({ ...debt, extraPayments: extraPayments.filter((_, i) => i !== idx) });
+  };
   const totalInterest = rows.reduce((a, r) => a + r.interest, 0);
   const years = rows.length > 0 ? Math.floor(rows.length / freq.perYear) : 0;
   const remainder = rows.length > 0 ? rows.length % freq.perYear : 0;
@@ -1910,6 +1934,40 @@ function DebtCard({ debt, onChange, onDelete }) {
           </div>
         </div>
 
+        <div>
+          <label style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: COLORS.inkSoft, display: "block", marginBottom: 4 }}>
+            One-time extra payments
+          </label>
+          <p style={{ ...fontBody, fontSize: 11, color: COLORS.inkSoft, margin: "0 0 6px" }}>
+            Paying extra once in a while? Add it to a specific payment number below — your regular payment amount above stays the same.
+          </p>
+          {extraPayments.length > 0 && (
+            <div style={{ marginBottom: 8 }}>
+              {extraPayments.map((e, i) => (
+                <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, padding: "3px 0" }}>
+                  <span style={{ ...fontBody, color: COLORS.ink }}>Payment #{e.period}: +{fmt(e.amount)}</span>
+                  <button onClick={() => removeExtra(i)} style={{ background: "none", border: "none", cursor: "pointer", color: COLORS.inkSoft, display: "flex" }}>
+                    <X size={13} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 6 }}>
+            <input
+              type="number" onFocus={e => e.target.select()} value={extraPeriodInput} onChange={e => setExtraPeriodInput(e.target.value)}
+              placeholder="Payment #"
+              style={{ ...fontBody, width: 90, padding: "8px 10px", borderRadius: 8, border: `1.5px solid ${COLORS.border}`, fontSize: 13, outline: "none" }}
+            />
+            <input
+              type="number" onFocus={e => e.target.select()} value={extraAmountInput} onChange={e => setExtraAmountInput(e.target.value)}
+              placeholder={`Extra (${CURRENCY_SYMBOL})`}
+              style={{ ...fontBody, flex: 1, padding: "8px 10px", borderRadius: 8, border: `1.5px solid ${COLORS.border}`, fontSize: 13, outline: "none" }}
+            />
+            <button onClick={addExtra} style={{ ...fontBody, background: COLORS.primary, color: "#fff", border: "none", borderRadius: 8, padding: "0 14px", fontWeight: 700, cursor: "pointer" }}>Add</button>
+          </div>
+        </div>
+
         <div style={{ background: COLORS.lavender, borderRadius: 10, padding: "10px 12px" }}>
           {willNeverPayOff ? (
             <p style={{ ...fontBody, fontSize: 12, color: COLORS.alert, fontWeight: 700, margin: 0 }}>
@@ -1958,9 +2016,12 @@ function DebtCard({ debt, onChange, onDelete }) {
                   </thead>
                   <tbody>
                     {rows.map(r => (
-                      <tr key={r.period} style={{ borderTop: `1px solid ${COLORS.border}` }}>
+                      <tr key={r.period} style={{ borderTop: `1px solid ${COLORS.border}`, background: r.extra > 0 ? COLORS.lavender : "transparent" }}>
                         <td style={{ padding: "4px 6px" }}>{r.period}</td>
-                        <td style={{ padding: "4px 6px", textAlign: "right" }}>{fmt(r.payment)}</td>
+                        <td style={{ padding: "4px 6px", textAlign: "right" }}>
+                          {fmt(r.payment)}
+                          {r.extra > 0 && <span style={{ color: COLORS.primary, fontWeight: 700 }}> (+{fmt(r.extra)})</span>}
+                        </td>
                         <td style={{ padding: "4px 6px", textAlign: "right", color: COLORS.alert }}>{fmt(r.interest)}</td>
                         <td style={{ padding: "4px 6px", textAlign: "right", color: COLORS.success }}>{fmt(r.principal)}</td>
                         <td style={{ padding: "4px 6px", textAlign: "right", fontWeight: 700 }}>{fmt(r.balance)}</td>
