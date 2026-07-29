@@ -1076,29 +1076,6 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
   const [loggedBy, setLoggedBy] = useState(household.partners?.[0] || "");
-  const [budgetOpen, setBudgetOpen] = useState(false);
-
-  const setBudgetVal = (cat, val) => {
-    update(h => {
-      const same = h.sameEveryMonth.expense[cat];
-      const existing = h.budget.expense[cat] || zeros();
-      const arr = same ? fillFromMonth(existing, selectedMonth, val) : [...existing];
-      if (!same) arr[selectedMonth] = val;
-      return { ...h, budget: { ...h.budget, expense: { ...h.budget.expense, [cat]: arr } } };
-    });
-  };
-
-  const toggleSame = (cat, checked) => {
-    update(h => {
-      let arr = h.budget.expense[cat] || zeros();
-      if (checked) arr = fillFromMonth(arr, selectedMonth, arr[selectedMonth]);
-      return {
-        ...h,
-        sameEveryMonth: { ...h.sameEveryMonth, expense: { ...h.sameEveryMonth.expense, [cat]: checked } },
-        budget: { ...h.budget, expense: { ...h.budget.expense, [cat]: arr } },
-      };
-    });
-  };
 
   const addTransaction = () => {
     if (!category || !amount) return;
@@ -1130,73 +1107,43 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
   const expenseTx = household.transactions.filter(t => t.type === "expense" && t.month === selectedMonth);
   const showInitials = household.preferences?.showPartnerInitials && household.partners?.length > 0;
 
+  const monthExpenseData = household.categories.expense
+    .map(c => ({ name: c, icon: household.categoryIcons?.expense?.[c], value: (household.actual.expense[c] || zeros())[selectedMonth] }))
+    .filter(d => d.value > 0)
+    .sort((a, b) => b.value - a.value);
+  const monthExpenseMax = Math.max(1, ...monthExpenseData.map(d => d.value));
+  const monthExpenseTotal = monthExpenseData.reduce((a, d) => a + d.value, 0);
+
   return (
     <div className="page-content" style={{ flex: 1 }}>
       <h1 style={{ ...fontDisplay, fontSize: 30, color: COLORS.ink, margin: "0 0 4px" }}>Expenses</h1>
-      <p style={{ ...fontBody, color: COLORS.inkSoft, margin: "0 0 24px", fontSize: 14 }}>Set your budget for {MONTHS[selectedMonth]}, then log purchases as they happen below.</p>
+      <p style={{ ...fontBody, color: COLORS.inkSoft, margin: "0 0 24px", fontSize: 14 }}>Log purchases as they happen — {MONTHS[selectedMonth]}'s breakdown below.</p>
 
-      <Card style={{ marginBottom: 20, overflowX: "auto" }}>
-        <button
-          onClick={() => setBudgetOpen(o => !o)}
-          style={{
-            width: "100%", background: "none", border: "none", cursor: "pointer", display: "flex",
-            alignItems: "center", justifyContent: "space-between", padding: 0, marginBottom: budgetOpen ? 14 : 0,
-          }}
-        >
-          <h3 style={{ ...fontDisplay, fontSize: 17, margin: 0, color: COLORS.ink }}>Monthly budget</h3>
-          {budgetOpen ? <ChevronLeft size={18} color={COLORS.inkSoft} style={{ transform: "rotate(90deg)" }} /> : <ChevronLeft size={18} color={COLORS.inkSoft} style={{ transform: "rotate(-90deg)" }} />}
-        </button>
-        {budgetOpen && (household.categories.expense.length === 0 ? (
-          <p style={{ ...fontBody, fontSize: 13, color: COLORS.inkSoft }}>No expense categories yet — add some in the Categories tab.</p>
-        ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse", ...fontBody, fontSize: 13 }}>
-            <thead>
-              <tr>
-                <th style={{ textAlign: "left", padding: "6px 8px", color: COLORS.inkSoft, fontWeight: 600 }}>Category</th>
-                <th style={{ textAlign: "right", padding: "6px 8px", color: COLORS.inkSoft, fontWeight: 600 }}>Planned ({MONTHS[selectedMonth]})</th>
-                <th style={{ textAlign: "right", padding: "6px 8px", color: COLORS.inkSoft, fontWeight: 600 }}>Actual</th>
-                <th style={{ textAlign: "right", padding: "6px 8px", color: COLORS.inkSoft, fontWeight: 600 }}>Remaining</th>
-              </tr>
-            </thead>
-            <tbody>
-              {household.categories.expense.map(cat => {
-                const planned = (household.budget.expense[cat] || zeros())[selectedMonth];
-                const act = (household.actual.expense[cat] || zeros())[selectedMonth];
-                const remaining = planned - act;
-                return (
-                  <tr key={cat} style={{ borderTop: `1px solid ${COLORS.border}` }}>
-                    <td style={{ padding: "8px" }}>
-                      {household.categoryIcons?.expense?.[cat] && <span style={{ marginRight: 6 }}>{household.categoryIcons.expense[cat]}</span>}
-                      {cat}
-                    </td>
-                    <td style={{ padding: "8px", textAlign: "right" }}>
-                      <input
-                        type="number" onFocus={e => e.target.select()} value={planned}
-                        onChange={e => setBudgetVal(cat, Number(e.target.value))}
-                        style={{
-                          ...fontBody, width: 90, textAlign: "right", padding: "5px 8px", borderRadius: 6,
-                          border: `1.5px solid ${COLORS.gold}`, background: "#FFF8EA", fontSize: 13, outline: "none",
-                        }}
-                      />
-                      <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                        <Checkbox
-                          checked={!!household.sameEveryMonth.expense[cat]}
-                          onChange={(checked) => toggleSame(cat, checked)}
-                          label="Same from here on"
-                        />
-                      </div>
-                    </td>
-                    <td style={{ padding: "8px", textAlign: "right", color: COLORS.inkSoft }}>{fmt(act)}</td>
-                    <td style={{ padding: "8px", textAlign: "right", fontWeight: 700, color: remaining >= 0 ? COLORS.success : COLORS.alert }}>
-                      {remaining >= 0 ? "" : "+"}{fmt(remaining)}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        ))}
-      </Card>
+      {monthExpenseData.length > 0 && (
+        <Card style={{ marginBottom: 20, maxWidth: 480 }}>
+          <h3 style={{ ...fontDisplay, fontSize: 17, margin: "0 0 14px", color: COLORS.ink }}>{MONTHS[selectedMonth]}'s expenses</h3>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {monthExpenseData.map((d, i) => (
+              <div key={d.name}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 3 }}>
+                  <span style={{ ...fontBody, fontSize: 12, color: COLORS.ink, display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
+                    <span style={{ width: 9, height: 9, borderRadius: 3, background: PALETTE[i % PALETTE.length], flexShrink: 0 }} />
+                    {d.icon && <span>{d.icon}</span>}
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</span>
+                  </span>
+                  <span style={{ ...fontBody, fontSize: 12, flexShrink: 0, paddingLeft: 8 }}>
+                    <span style={{ fontWeight: 700, color: COLORS.ink }}>{fmt(d.value)}</span>
+                    <span style={{ color: COLORS.inkSoft }}> · {monthExpenseTotal > 0 ? Math.round((d.value / monthExpenseTotal) * 100) : 0}%</span>
+                  </span>
+                </div>
+                <div style={{ height: 8, width: "100%", background: COLORS.lavender, borderRadius: 4, overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${(d.value / monthExpenseMax) * 100}%`, background: PALETTE[i % PALETTE.length], borderRadius: 4 }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       <Card style={{ marginBottom: 20 }}>
         <h3 style={{ ...fontDisplay, fontSize: 17, margin: "0 0 14px", color: COLORS.ink }}>Log an expense</h3>
