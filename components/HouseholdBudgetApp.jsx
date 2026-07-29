@@ -2039,15 +2039,17 @@ function DebtCard({ debt, onChange, onDelete }) {
                         <tr key={r.period} style={{ borderTop: `1px solid ${COLORS.border}`, background: r.overridden ? COLORS.lavender : "transparent" }}>
                           {debt.firstPaymentDate && <td style={{ padding: "4px 6px", whiteSpace: "nowrap" }}>{formatDate(dateStr)}</td>}
                           <td style={{ padding: "4px 6px" }}>{r.period}</td>
+                          <td style={{ padding: "4px 6px", textAlign: "right" }}>{fmt(r.payment)}</td>
+                          <td style={{ padding: "4px 6px", textAlign: "right", color: COLORS.alert }}>{fmt(r.interest)}</td>
                           <td style={{ padding: "4px 6px", textAlign: "right" }}>
                             <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4 }}>
                               <input
                                 type="number" onFocus={e => e.target.select()}
-                                value={Math.round(r.payment * 100) / 100}
+                                value={Math.round(r.principal * 100) / 100}
                                 onChange={e => setOverride(r.period, Number(e.target.value))}
                                 style={{
                                   ...fontBody, width: 66, textAlign: "right", padding: "3px 5px", borderRadius: 5, fontSize: 11, outline: "none",
-                                  border: `1.5px solid ${r.overridden ? COLORS.primary : COLORS.border}`, background: "#fff",
+                                  border: `1.5px solid ${r.overridden ? COLORS.primary : COLORS.border}`, background: "#fff", color: COLORS.success,
                                 }}
                               />
                               {r.overridden && (
@@ -2057,8 +2059,6 @@ function DebtCard({ debt, onChange, onDelete }) {
                               )}
                             </div>
                           </td>
-                          <td style={{ padding: "4px 6px", textAlign: "right", color: COLORS.alert }}>{fmt(r.interest)}</td>
-                          <td style={{ padding: "4px 6px", textAlign: "right", color: COLORS.success }}>{fmt(r.principal)}</td>
                           <td style={{ padding: "4px 6px", textAlign: "right", fontWeight: 700 }}>{fmt(r.balance)}</td>
                         </tr>
                       );
