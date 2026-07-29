@@ -2069,6 +2069,7 @@ function DebtCard({ debt, onChange, onDelete }) {
 function DebtView({ household, update }) {
   const [val, setVal] = useState("");
   const [icon, setIcon] = useState(null);
+  const [addOpen, setAddOpen] = useState(false);
   const debts = household.debts || [];
 
   const addDebt = (name, ic) => {
@@ -2119,21 +2120,34 @@ function DebtView({ household, update }) {
       )}
 
       <Card style={{ marginTop: 20 }}>
-        <h3 style={{ ...fontDisplay, fontSize: 17, margin: "0 0 12px", color: COLORS.ink }}>Add a debt</h3>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-          {SUGGESTED.debt.filter(s => !debts.some(d => d.name === s)).map(s => (
-            <Chip key={s} onClick={() => addDebt(s, SUGGESTED_ICONS.debt?.[s])}>
-              {SUGGESTED_ICONS.debt?.[s] ? `${SUGGESTED_ICONS.debt[s]} ` : "+ "}{s}
-            </Chip>
-          ))}
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <IconPicker icon={icon} setIcon={setIcon} />
-          <input value={val} onChange={e => setVal(e.target.value)} onKeyDown={e => e.key === "Enter" && (addDebt(val, icon), setVal(""), setIcon(null))}
-            placeholder="Add your own debt…"
-            style={{ ...fontBody, flex: 1, padding: "9px 12px", borderRadius: 8, border: `1.5px solid ${COLORS.border}`, fontSize: 13, outline: "none" }} />
-          <button onClick={() => { addDebt(val, icon); setVal(""); setIcon(null); }} style={{ ...fontBody, background: COLORS.primary, color: "#fff", border: "none", borderRadius: 8, padding: "0 14px", fontWeight: 700, cursor: "pointer" }}>Add</button>
-        </div>
+        <button
+          onClick={() => setAddOpen(o => !o)}
+          style={{
+            width: "100%", background: "none", border: "none", cursor: "pointer", display: "flex",
+            alignItems: "center", justifyContent: "space-between", padding: 0, marginBottom: addOpen ? 12 : 0,
+          }}
+        >
+          <h3 style={{ ...fontDisplay, fontSize: 17, margin: 0, color: COLORS.ink }}>Add a debt</h3>
+          {addOpen ? <ChevronLeft size={18} color={COLORS.inkSoft} style={{ transform: "rotate(90deg)" }} /> : <ChevronLeft size={18} color={COLORS.inkSoft} style={{ transform: "rotate(-90deg)" }} />}
+        </button>
+        {addOpen && (
+          <>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+              {SUGGESTED.debt.filter(s => !debts.some(d => d.name === s)).map(s => (
+                <Chip key={s} onClick={() => addDebt(s, SUGGESTED_ICONS.debt?.[s])}>
+                  {SUGGESTED_ICONS.debt?.[s] ? `${SUGGESTED_ICONS.debt[s]} ` : "+ "}{s}
+                </Chip>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <IconPicker icon={icon} setIcon={setIcon} />
+              <input value={val} onChange={e => setVal(e.target.value)} onKeyDown={e => e.key === "Enter" && (addDebt(val, icon), setVal(""), setIcon(null))}
+                placeholder="Add your own debt…"
+                style={{ ...fontBody, flex: 1, padding: "9px 12px", borderRadius: 8, border: `1.5px solid ${COLORS.border}`, fontSize: 13, outline: "none" }} />
+              <button onClick={() => { addDebt(val, icon); setVal(""); setIcon(null); }} style={{ ...fontBody, background: COLORS.primary, color: "#fff", border: "none", borderRadius: 8, padding: "0 14px", fontWeight: 700, cursor: "pointer" }}>Add</button>
+            </div>
+          </>
+        )}
       </Card>
     </div>
   );
