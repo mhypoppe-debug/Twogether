@@ -775,6 +775,7 @@ function Dashboard({ household, selectedMonth, setSelectedMonth }) {
     ...household.categories.reserve.map(c => ({ name: c, icon: household.categoryIcons?.reserve?.[c], reserved: true, value: (household.actual.reserve[c] || zeros()).slice(0, selectedMonth + 1).reduce((a, b) => a + b, 0) })),
   ].filter(d => d.value > 0).sort((a, b) => b.value - a.value);
   const spendingMax = Math.max(1, ...spendingData.map(d => d.value));
+  const spendingTotal = spendingData.reduce((a, d) => a + d.value, 0);
 
   const noData = household.transactions.length === 0;
 
@@ -835,7 +836,10 @@ function Dashboard({ household, selectedMonth, setSelectedMonth }) {
                           {d.name}{d.reserved && <span style={{ color: COLORS.inkSoft, fontWeight: 400 }}> (reserved)</span>}
                         </span>
                       </span>
-                      <span style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: COLORS.ink, flexShrink: 0, paddingLeft: 8 }}>{fmt(d.value)}</span>
+                      <span style={{ ...fontBody, fontSize: 12, flexShrink: 0, paddingLeft: 8 }}>
+                        <span style={{ fontWeight: 700, color: COLORS.ink }}>{fmt(d.value)}</span>
+                        <span style={{ color: COLORS.inkSoft }}> · {spendingTotal > 0 ? Math.round((d.value / spendingTotal) * 100) : 0}%</span>
+                      </span>
                     </div>
                     <div style={{ height: 8, width: "100%", background: COLORS.lavender, borderRadius: 4, overflow: "hidden" }}>
                       <div style={{ height: "100%", width: `${(d.value / spendingMax) * 100}%`, background: PALETTE[i % PALETTE.length], borderRadius: 4 }} />
