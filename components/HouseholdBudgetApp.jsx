@@ -1118,7 +1118,7 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
     });
   };
 
-  const expenseTx = household.transactions.filter(t => t.type === "expense");
+  const expenseTx = household.transactions.filter(t => t.type === "expense" && t.month === selectedMonth);
   const showInitials = household.preferences?.showPartnerInitials && household.partners?.length > 0;
 
   return (
@@ -1206,9 +1206,9 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
       </Card>
 
       <Card>
-        <h3 style={{ ...fontDisplay, fontSize: 16, margin: "0 0 12px", color: COLORS.ink }}>Recent expenses</h3>
+        <h3 style={{ ...fontDisplay, fontSize: 16, margin: "0 0 12px", color: COLORS.ink }}>{MONTHS[selectedMonth]} expenses</h3>
         {expenseTx.length === 0 ? (
-          <p style={{ ...fontBody, fontSize: 13, color: COLORS.inkSoft }}>Nothing logged yet.</p>
+          <p style={{ ...fontBody, fontSize: 13, color: COLORS.inkSoft }}>Nothing logged for {MONTHS[selectedMonth]} yet.</p>
         ) : (
           <div>
             {expenseTx.slice(0, 15).map(tx => (
@@ -1226,7 +1226,6 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
                     {household.categoryIcons?.expense?.[tx.category] && <span style={{ marginRight: 4 }}>{household.categoryIcons.expense[tx.category]}</span>}
                     <span style={{ fontWeight: 600 }}>{tx.category}</span>
                     {tx.note && <span style={{ color: COLORS.inkSoft }}> · {tx.note}</span>}
-                    <span style={{ color: COLORS.inkSoft }}> · {MONTHS[tx.month]}</span>
                   </div>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
