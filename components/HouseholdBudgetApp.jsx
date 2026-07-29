@@ -1014,7 +1014,7 @@ function BulkFillCard({ household, setActualDirect }) {
       {open && (
         <div style={{ marginTop: 16, overflowX: "auto" }}>
           <p style={{ ...fontBody, fontSize: 12, color: COLORS.alert, marginBottom: 10 }}>
-            Note: this sets the category's total directly — it replaces whatever was there, and won't create individual entries in "Recent purchases".
+            Note: this sets the category's total directly — it replaces whatever was there, and won't create individual entries in "Recent expenses".
           </p>
           <table style={{ borderCollapse: "collapse", ...fontBody, fontSize: 12, width: "100%" }}>
             <thead>
@@ -1183,7 +1183,7 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
       <BulkFillCard household={household} setActualDirect={setActualDirect} />
 
       <Card style={{ marginBottom: 20 }}>
-        <h3 style={{ ...fontDisplay, fontSize: 17, margin: "0 0 14px", color: COLORS.ink }}>Log a purchase</h3>
+        <h3 style={{ ...fontDisplay, fontSize: 17, margin: "0 0 14px", color: COLORS.ink }}>Log an expense</h3>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: household.partners?.length > 0 ? 10 : 0 }}>
           <select value={category} onChange={e => setCategory(e.target.value)} style={{ ...fontBody, padding: "10px 12px", borderRadius: 8, border: `1.5px solid ${COLORS.border}`, fontSize: 14, minWidth: 180 }}>
             <option value="">Select category…</option>
@@ -1206,7 +1206,7 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
       </Card>
 
       <Card>
-        <h3 style={{ ...fontDisplay, fontSize: 16, margin: "0 0 12px", color: COLORS.ink }}>Recent purchases</h3>
+        <h3 style={{ ...fontDisplay, fontSize: 16, margin: "0 0 12px", color: COLORS.ink }}>Recent expenses</h3>
         {expenseTx.length === 0 ? (
           <p style={{ ...fontBody, fontSize: 13, color: COLORS.inkSoft }}>Nothing logged yet.</p>
         ) : (
