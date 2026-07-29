@@ -1867,6 +1867,9 @@ function CategoriesView({ household, update, sessionPassword, onRename }) {
       return { ...h, categories: { ...h.categories, [type]: cats }, budget: { ...h.budget, [type]: budget }, actual: { ...h.actual, [type]: actual }, categoryIcons: { ...h.categoryIcons, [type]: icons } };
     });
   };
+  const setCatIcon = (type, name, icon) => {
+    update(h => ({ ...h, categoryIcons: { ...h.categoryIcons, [type]: { ...h.categoryIcons[type], [name]: icon } } }));
+  };
 
   const IconPicker = ({ icon, setIcon }) => {
     const [open, setOpen] = useState(false);
@@ -1904,6 +1907,48 @@ function CategoriesView({ household, update, sessionPassword, onRename }) {
     );
   };
 
+  const CategoryChip = ({ cat, icon, onIconChange, onRemove }) => {
+    const [pickerOpen, setPickerOpen] = useState(false);
+    return (
+      <div style={{
+        ...fontBody, display: "flex", alignItems: "center", gap: 6, background: COLORS.lavender,
+        color: COLORS.primary, padding: "6px 10px", borderRadius: 20, fontSize: 13, fontWeight: 600,
+        position: "relative",
+      }}>
+        <button
+          type="button"
+          onClick={() => setPickerOpen(o => !o)}
+          title="Change icon"
+          style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", padding: 0, fontSize: 14, opacity: icon ? 1 : 0.5 }}
+        >
+          {icon || "🏷️"}
+        </button>
+        {cat}
+        <button onClick={onRemove} style={{ background: "none", border: "none", cursor: "pointer", color: COLORS.primary, display: "flex" }}>
+          <X size={13} />
+        </button>
+        {pickerOpen && (
+          <div style={{
+            position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 20, background: "#fff", border: `1px solid ${COLORS.border}`,
+            borderRadius: 10, padding: 8, display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 4,
+            boxShadow: "0 6px 20px rgba(0,0,0,0.12)", width: 210,
+          }}>
+            {ICON_CHOICES.map(ic => (
+              <button key={ic} type="button" onClick={() => { onIconChange(ic); setPickerOpen(false); }}
+                style={{ fontSize: 17, background: "none", border: "none", cursor: "pointer", borderRadius: 6, padding: 4 }}>
+                {ic}
+              </button>
+            ))}
+            <button type="button" onClick={() => { onIconChange(null); setPickerOpen(false); }}
+              style={{ fontSize: 11, gridColumn: "span 6", color: COLORS.inkSoft, background: "none", border: "none", cursor: "pointer", ...fontBody }}>
+              No icon
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const Section = ({ type, title, suggestions }) => {
     const [val, setVal] = useState("");
     const [icon, setIcon] = useState(null);
@@ -1912,16 +1957,14 @@ function CategoriesView({ household, update, sessionPassword, onRename }) {
         <h3 style={{ ...fontDisplay, fontSize: 17, margin: "0 0 12px", color: COLORS.ink }}>{title}</h3>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
           {household.categories[type].map(c => (
-            <div key={c} style={{
-              ...fontBody, display: "flex", alignItems: "center", gap: 6, background: COLORS.lavender,
-              color: COLORS.primary, padding: "6px 10px 6px 14px", borderRadius: 20, fontSize: 13, fontWeight: 600,
-            }}>
-              {household.categoryIcons?.[type]?.[c] && <span>{household.categoryIcons[type][c]}</span>}
-              {c}
-              <button onClick={() => removeCat(type, c)} style={{ background: "none", border: "none", cursor: "pointer", color: COLORS.primary, display: "flex" }}>
-                <X size={13} />
-              </button>
-            </div>
+            <CategoryChip
+              key={c}
+              type={type}
+              cat={c}
+              icon={household.categoryIcons?.[type]?.[c]}
+              onIconChange={(ic) => setCatIcon(type, c, ic)}
+              onRemove={() => removeCat(type, c)}
+            />
           ))}
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
