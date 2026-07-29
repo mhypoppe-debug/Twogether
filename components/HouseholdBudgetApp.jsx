@@ -1060,6 +1060,7 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
   const [loggedBy, setLoggedBy] = useState(household.partners?.[0] || "");
+  const [budgetOpen, setBudgetOpen] = useState(true);
 
   const setBudgetVal = (cat, val) => {
     update(h => {
@@ -1127,8 +1128,17 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
       <p style={{ ...fontBody, color: COLORS.inkSoft, margin: "0 0 24px", fontSize: 14 }}>Set your budget for {MONTHS[selectedMonth]}, then log purchases as they happen below.</p>
 
       <Card style={{ marginBottom: 20, overflowX: "auto" }}>
-        <h3 style={{ ...fontDisplay, fontSize: 17, margin: "0 0 14px", color: COLORS.ink }}>Monthly budget</h3>
-        {household.categories.expense.length === 0 ? (
+        <button
+          onClick={() => setBudgetOpen(o => !o)}
+          style={{
+            width: "100%", background: "none", border: "none", cursor: "pointer", display: "flex",
+            alignItems: "center", justifyContent: "space-between", padding: 0, marginBottom: budgetOpen ? 14 : 0,
+          }}
+        >
+          <h3 style={{ ...fontDisplay, fontSize: 17, margin: 0, color: COLORS.ink }}>Monthly budget</h3>
+          {budgetOpen ? <ChevronLeft size={18} color={COLORS.inkSoft} style={{ transform: "rotate(-90deg)" }} /> : <ChevronLeft size={18} color={COLORS.inkSoft} style={{ transform: "rotate(90deg)" }} />}
+        </button>
+        {budgetOpen && (household.categories.expense.length === 0 ? (
           <p style={{ ...fontBody, fontSize: 13, color: COLORS.inkSoft }}>No expense categories yet — add some in the Categories tab.</p>
         ) : (
           <table style={{ width: "100%", borderCollapse: "collapse", ...fontBody, fontSize: 13 }}>
@@ -1177,7 +1187,7 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
               })}
             </tbody>
           </table>
-        )}
+        ))}
       </Card>
 
       <BulkFillCard household={household} setActualDirect={setActualDirect} />
