@@ -1013,7 +1013,7 @@ function IncomeView({ household, update, selectedMonth, setSelectedMonth }) {
           <p style={{ ...fontBody, color: COLORS.inkSoft }}>No income categories yet — add one in Categories.</p>
         </Card>
       ) : (
-        <div className="income-grid" style={{ marginTop: 20 }}>
+        <div className="two-col-grid" style={{ marginTop: 20 }}>
           {household.categories.income.map(cat => (
             <div
               key={cat}
@@ -1340,11 +1340,15 @@ function ReserveGoalCard({ cat, icon, savedYtd, goal, releasedIdx, monthly, sele
   const suggested = target > 0 && remainingMonths !== null ? stillNeeded / remainingMonths : null;
   const pct = target > 0 ? Math.min(100, (savedYtd / target) * 100) : 0;
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [goalOpen, setGoalOpen] = useState(false);
 
   return (
     <Card style={{ marginBottom: 16 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-        <h4 style={{ ...fontDisplay, fontSize: 18, margin: 0, color: COLORS.ink }}>{icon && <span>{icon} </span>}{cat}</h4>
+        <h4 style={{ ...fontDisplay, fontSize: 18, margin: 0, color: COLORS.ink, display: "flex", alignItems: "center", gap: 6 }}>
+          <GripVertical size={16} color={COLORS.inkSoft} style={{ cursor: "grab", flexShrink: 0 }} />
+          {icon && <span>{icon} </span>}{cat}
+        </h4>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {isReleased && <span style={{ ...fontBody, fontSize: 11, background: COLORS.lavender, color: COLORS.primary, padding: "3px 8px", borderRadius: 12, fontWeight: 700 }}>Paid</span>}
           {confirmingDelete ? (
@@ -1375,38 +1379,54 @@ function ReserveGoalCard({ cat, icon, savedYtd, goal, releasedIdx, monthly, sele
         </div>
       </div>
 
-      <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
-        {/* left: goal setup */}
-        <div style={{ flex: "1 1 220px", minWidth: 220 }}>
-          <label style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: COLORS.inkSoft, display: "block", marginBottom: 4 }}>
-            Annual goal — how much in total?
-          </label>
-          <div style={{ position: "relative", marginBottom: 10 }}>
-            <span style={{ position: "absolute", left: 12, top: 9, ...fontBody, fontSize: 14, color: COLORS.inkSoft }}>{CURRENCY_SYMBOL}</span>
-            <input
-              type="number" onFocus={e => e.target.select()} value={goal?.targetAmount || ""}
-              onChange={e => onGoalChange({ ...goal, targetAmount: Number(e.target.value) })}
-              placeholder="e.g. 1200"
-              style={{ ...fontBody, width: "100%", boxSizing: "border-box", padding: "8px 10px 8px 26px", borderRadius: 8, border: `1.5px solid ${COLORS.gold}`, background: "#FFF8EA", fontSize: 14, outline: "none" }}
-            />
-          </div>
-          <label style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: COLORS.inkSoft, display: "block", marginBottom: 4 }}>
-            When does it need to be paid?
-          </label>
-          <input
-            type="date" value={goal?.targetDate || ""}
-            onChange={e => onGoalChange({ ...goal, targetDate: e.target.value })}
-            style={{ ...fontBody, width: "100%", boxSizing: "border-box", padding: "8px 10px", borderRadius: 8, border: `1.5px solid ${COLORS.gold}`, background: "#FFF8EA", fontSize: 13, outline: "none", marginBottom: 6 }}
-          />
-          {goal?.targetDate && (
-            <p style={{ ...fontBody, fontSize: 12, color: COLORS.inkSoft, margin: 0 }}>
-              Due {formatDate(goal.targetDate)} · {remainingMonths} {remainingMonths === 1 ? "month" : "months"} left to save
-            </p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        {/* goal setup, collapsed by default */}
+        <div>
+          <button
+            onClick={() => setGoalOpen(o => !o)}
+            style={{
+              width: "100%", background: "none", border: "none", cursor: "pointer", display: "flex",
+              alignItems: "center", justifyContent: "space-between", padding: 0, marginBottom: 4,
+            }}
+          >
+            <span style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: COLORS.inkSoft }}>
+              {target > 0 ? `Goal: ${fmt(target)}${goal?.targetDate ? ` · due ${formatDate(goal.targetDate)}` : ""}` : "No goal set"}
+            </span>
+            <ChevronLeft size={16} color={COLORS.inkSoft} style={{ transform: goalOpen ? "rotate(90deg)" : "rotate(-90deg)", flexShrink: 0 }} />
+          </button>
+          {goalOpen && (
+            <>
+              <label style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: COLORS.inkSoft, display: "block", marginBottom: 4 }}>
+                Annual goal — how much in total?
+              </label>
+              <div style={{ position: "relative", marginBottom: 10 }}>
+                <span style={{ position: "absolute", left: 12, top: 9, ...fontBody, fontSize: 14, color: COLORS.inkSoft }}>{CURRENCY_SYMBOL}</span>
+                <input
+                  type="number" onFocus={e => e.target.select()} value={goal?.targetAmount || ""}
+                  onChange={e => onGoalChange({ ...goal, targetAmount: Number(e.target.value) })}
+                  placeholder="e.g. 1200"
+                  style={{ ...fontBody, width: "100%", boxSizing: "border-box", padding: "8px 10px 8px 26px", borderRadius: 8, border: `1.5px solid ${COLORS.gold}`, background: "#FFF8EA", fontSize: 14, outline: "none" }}
+                />
+              </div>
+              <label style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: COLORS.inkSoft, display: "block", marginBottom: 4 }}>
+                When does it need to be paid?
+              </label>
+              <input
+                type="date" value={goal?.targetDate || ""}
+                onChange={e => onGoalChange({ ...goal, targetDate: e.target.value })}
+                style={{ ...fontBody, width: "100%", boxSizing: "border-box", padding: "8px 10px", borderRadius: 8, border: `1.5px solid ${COLORS.gold}`, background: "#FFF8EA", fontSize: 13, outline: "none", marginBottom: 6 }}
+              />
+              {goal?.targetDate && (
+                <p style={{ ...fontBody, fontSize: 12, color: COLORS.inkSoft, margin: 0 }}>
+                  Due {formatDate(goal.targetDate)} · {remainingMonths} {remainingMonths === 1 ? "month" : "months"} left to save
+                </p>
+              )}
+            </>
           )}
         </div>
 
-        {/* right: progress + this month's input */}
-        <div style={{ flex: "1 1 240px", minWidth: 240 }}>
+        {/* progress + this month's input */}
+        <div>
           <div style={{ height: 14, width: "100%", background: COLORS.lavender, borderRadius: 8, overflow: "hidden", marginBottom: 6 }}>
             <div style={{ height: "100%", width: `${pct}%`, background: `linear-gradient(90deg, ${COLORS.gold}, ${COLORS.primary})`, transition: "width .4s" }} />
           </div>
@@ -1472,6 +1492,19 @@ function ReserveGoalCard({ cat, icon, savedYtd, goal, releasedIdx, monthly, sele
 }
 
 function ReservesView({ household, update, selectedMonth, setSelectedMonth }) {
+  const [draggedCat, setDraggedCat] = useState(null);
+  const reorderReserve = (fromCat, toCat) => {
+    if (fromCat === toCat) return;
+    update(h => {
+      const arr = [...h.categories.reserve];
+      const fromIdx = arr.indexOf(fromCat);
+      const toIdx = arr.indexOf(toCat);
+      if (fromIdx === -1 || toIdx === -1) return h;
+      arr.splice(fromIdx, 1);
+      arr.splice(toIdx, 0, fromCat);
+      return { ...h, categories: { ...h.categories, reserve: arr } };
+    });
+  };
   const setMonthly = (cat, val) => {
     update(h => {
       const arr = [...(h.actual.reserve[cat] || zeros())];
@@ -1597,6 +1630,11 @@ function ReservesView({ household, update, selectedMonth, setSelectedMonth }) {
     });
   };
 
+  const reserveData = household.categories.reserve
+    .filter(cat => !(household.archivedReserves || []).includes(cat))
+    .map(c => ({ name: c, value: (household.actual.reserve[c] || zeros())[selectedMonth] }))
+    .filter(d => d.value > 0);
+
   return (
     <div className="page-content" style={{ flex: 1 }}>
       <h1 style={{ ...fontDisplay, fontSize: 30, color: COLORS.ink, margin: "0 0 4px" }}>Reserves</h1>
@@ -1606,35 +1644,61 @@ function ReservesView({ household, update, selectedMonth, setSelectedMonth }) {
         the goal any time, even mid-year — the months-remaining count just adjusts.
       </p>
 
+      {reserveData.length > 0 && (
+        <Card style={{ marginTop: 16, marginBottom: 4, maxWidth: 420 }}>
+          <h3 style={{ ...fontDisplay, fontSize: 16, margin: "0 0 12px", color: COLORS.ink }}>{MONTHS[selectedMonth]}'s reserves</h3>
+          <ResponsiveContainer width="100%" height={220}>
+            <PieChart>
+              <Pie data={reserveData} dataKey="value" nameKey="name" innerRadius={45} outerRadius={78} paddingAngle={2}>
+                {reserveData.map((_, i) => <Cell key={i} fill={PALETTE[i % PALETTE.length]} />)}
+              </Pie>
+              <Tooltip formatter={(v) => fmt(v)} />
+              <Legend wrapperStyle={{ fontSize: 12 }} />
+            </PieChart>
+          </ResponsiveContainer>
+        </Card>
+      )}
+
       {household.categories.reserve.length === 0 ? (
         <Card style={{ textAlign: "center", padding: 40, marginTop: 20 }}>
           <p style={{ ...fontBody, color: COLORS.inkSoft }}>No reserve goals yet — add one in Categories.</p>
         </Card>
       ) : (
         <div style={{ marginTop: 20 }}>
-          {household.categories.reserve
-            .filter(cat => !(household.archivedReserves || []).includes(cat))
-            .map(cat => {
-              const arr = household.actual.reserve[cat] || zeros();
-              const savedYtd = arr.slice(0, selectedMonth + 1).reduce((a, b) => a + b, 0);
-              return (
-                <ReserveGoalCard
-                  key={cat}
-                  cat={cat}
-                  icon={household.categoryIcons?.reserve?.[cat]}
-                  savedYtd={savedYtd}
-                  goal={household.reserveGoals?.[cat] || { targetAmount: 0, targetDate: "" }}
-                  releasedIdx={household.releasedThrough[cat]}
-                  monthly={arr[selectedMonth]}
-                  selectedMonth={selectedMonth}
-                  onGoalChange={(g) => setGoal(cat, g)}
-                  onMonthlyChange={(v) => setMonthly(cat, v)}
-                  onRelease={() => toggleRelease(cat)}
-                  onSettle={(payload) => settleReserve(cat, payload)}
-                  onDelete={() => deleteReserve(cat)}
-                />
-              );
-            })}
+          <div className="two-col-grid">
+            {household.categories.reserve
+              .filter(cat => !(household.archivedReserves || []).includes(cat))
+              .map(cat => {
+                const arr = household.actual.reserve[cat] || zeros();
+                const savedYtd = arr.slice(0, selectedMonth + 1).reduce((a, b) => a + b, 0);
+                return (
+                  <div
+                    key={cat}
+                    draggable
+                    onDragStart={() => setDraggedCat(cat)}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={() => { if (draggedCat) reorderReserve(draggedCat, cat); setDraggedCat(null); }}
+                    onDragEnd={() => setDraggedCat(null)}
+                    style={{ opacity: draggedCat === cat ? 0.5 : 1 }}
+                  >
+                    <ReserveGoalCard
+                      cat={cat}
+                      icon={household.categoryIcons?.reserve?.[cat]}
+                      savedYtd={savedYtd}
+                      goal={household.reserveGoals?.[cat] || { targetAmount: 0, targetDate: "" }}
+                      releasedIdx={household.releasedThrough[cat]}
+                      monthly={arr[selectedMonth]}
+                      selectedMonth={selectedMonth}
+                      onGoalChange={(g) => setGoal(cat, g)}
+                      onMonthlyChange={(v) => setMonthly(cat, v)}
+                      onRelease={() => toggleRelease(cat)}
+                      onSettle={(payload) => settleReserve(cat, payload)}
+                      onDelete={() => deleteReserve(cat)}
+                    />
+                  </div>
+                );
+              })}
+          </div>
 
           {(household.archivedReserves || []).length > 0 && (
             <Card style={{ marginTop: 8 }}>
@@ -2524,7 +2588,7 @@ function ResponsiveStyles() {
       .page-content { padding: 32px; }
       .kpi-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
       .kpi-card { flex: 1; min-width: 180px; }
-      .income-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; align-items: start; }
+      .two-col-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; align-items: start; }
 
       @media (max-width: 760px) {
         .app-shell { flex-direction: column; }
@@ -2551,7 +2615,7 @@ function ResponsiveStyles() {
         .kpi-card .kpi-value { font-size: 15px !important; }
 
         table { font-size: 11px !important; }
-        .income-grid { grid-template-columns: 1fr !important; }
+        .two-col-grid { grid-template-columns: 1fr !important; }
       }
     `}</style>
   );
