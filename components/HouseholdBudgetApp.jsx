@@ -773,7 +773,7 @@ function YearOverview({ household, selectedMonth }) {
       </div>
       <div style={{ display: "flex", gap: 14, marginTop: 8, ...fontBody, fontSize: 11, color: COLORS.inkSoft }}>
         <span style={{ color: COLORS.success, fontWeight: 700 }}>■</span> Income
-        <span style={{ color: COLORS.alert, fontWeight: 700 }}>■</span> Expenses
+        <span style={{ color: COLORS.alert, fontWeight: 700 }}>■</span> Expenses / Reserves
         <span style={{ color: COLORS.ink, fontWeight: 700 }}>■</span> Net
       </div>
     </Card>
@@ -1231,10 +1231,6 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
           </div>
         )}
       </Card>
-
-      <div style={{ marginTop: 20 }}>
-        <YearOverview household={household} selectedMonth={selectedMonth} />
-      </div>
     </div>
   );
 }
@@ -1712,10 +1708,6 @@ function ReservesView({ household, update, selectedMonth, setSelectedMonth }) {
           )}
         </div>
       )}
-
-      <div style={{ marginTop: 20 }}>
-        <YearOverview household={household} selectedMonth={selectedMonth} />
-      </div>
     </div>
   );
 }
