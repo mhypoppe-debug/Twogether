@@ -1206,6 +1206,10 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
           </div>
         )}
       </Card>
+
+      <div style={{ marginTop: 20 }}>
+        <YearOverview household={household} selectedMonth={selectedMonth} />
+      </div>
     </div>
   );
 }
@@ -1683,6 +1687,10 @@ function ReservesView({ household, update, selectedMonth, setSelectedMonth }) {
           )}
         </div>
       )}
+
+      <div style={{ marginTop: 20 }}>
+        <YearOverview household={household} selectedMonth={selectedMonth} />
+      </div>
     </div>
   );
 }
