@@ -2187,10 +2187,35 @@ async function saveHouseholdRecord(id, household, plainPassword) {
   throw lastErr;
 }
 
+// Backfills fields that didn't exist yet when older household records were saved,
+// so loading them doesn't crash on `undefined` (e.g. .categoryAddedMonth[type]).
+function normalizeHousehold(h) {
+  if (!h) return h;
+  const empty = emptyHousehold();
+  return {
+    ...empty,
+    ...h,
+    categories: { ...empty.categories, ...(h.categories || {}) },
+    budget: { ...empty.budget, ...(h.budget || {}) },
+    actual: { ...empty.actual, ...(h.actual || {}) },
+    categoryIcons: { ...empty.categoryIcons, ...(h.categoryIcons || {}) },
+    categoryAddedMonth: { ...empty.categoryAddedMonth, ...(h.categoryAddedMonth || {}) },
+    categoryRemovedMonth: { ...empty.categoryRemovedMonth, ...(h.categoryRemovedMonth || {}) },
+    releasedThrough: h.releasedThrough || {},
+    releasedAmount: h.releasedAmount || {},
+    archivedReserves: h.archivedReserves || [],
+    reserveGoals: h.reserveGoals || {},
+    sameEveryMonth: { ...empty.sameEveryMonth, ...(h.sameEveryMonth || {}) },
+    copyActualFromExpected: { ...empty.copyActualFromExpected, ...(h.copyActualFromExpected || {}) },
+    preferences: { ...empty.preferences, ...(h.preferences || {}) },
+    transactions: h.transactions || [],
+  };
+}
+
 async function loadHouseholdRecord(id, plainPassword) {
   try {
     const { household } = await apiCall("/api/household/login", { id, password: plainPassword });
-    return household;
+    return normalizeHousehold(household);
   } catch (e) {
     return null;
   }
@@ -2567,7 +2592,7 @@ export default function HouseholdBudgetApp() {
           onCreate={() => setScreen("onboarding")}
           onJoin={handleJoin}
           onImport={(h) => {
-            setHousehold(h);
+            setHousehold(normalizeHousehold(h));
             setSessionPassword(null); // restored from file, not tied to cloud storage until saved again
             setScreen("app");
           }}
