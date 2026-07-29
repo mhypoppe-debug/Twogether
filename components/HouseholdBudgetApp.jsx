@@ -1494,19 +1494,53 @@ function ReservesView({ household, update, selectedMonth, setSelectedMonth }) {
     update(h => {
       const arr = [...(h.actual.reserve[cat] || zeros())];
       const savedThroughSelected = arr.slice(0, selectedMonth + 1).reduce((a, b) => a + b, 0);
-      let releasedAmount = paidAmount;
+      const drawnFromSavings = Math.min(paidAmount, savedThroughSelected);
+      const shortfall = Math.max(0, paidAmount - savedThroughSelected);
 
-      if (leftoverAction === "free") {
-        // You saved more than was paid and want the leftover free to spend now —
-        // trim it off this month's entry so the numbers match reality.
-        arr[selectedMonth] = (arr[selectedMonth] || 0) - (savedThroughSelected - paidAmount);
-      } else if (leftoverAction === "carry") {
-        // Keep the leftover saved as a head start on the next round — don't touch
-        // the numbers, just record that only `paidAmount` of it was actually spent.
-      } else if (paidAmount > savedThroughSelected) {
-        // Paid more than you'd saved — draw the extra from this month.
-        arr[selectedMonth] = (arr[selectedMonth] || 0) + (paidAmount - savedThroughSelected);
+      // Turn whatever's actually being paid into real expense entries, dated to the months
+      // the money was originally saved in (oldest first) — so it leaves the bank balance for
+      // real, and shows up as a log in the Expenses tab, instead of a hidden correction.
+      let remaining = drawnFromSavings;
+      const payouts = []; // [{ monthIdx, amount }]
+      for (let i = 0; i <= selectedMonth && remaining > 0; i++) {
+        const monthAmt = arr[i] || 0;
+        if (monthAmt <= 0) continue;
+        const take = Math.min(monthAmt, remaining);
+        payouts.push({ monthIdx: i, amount: take });
+        arr[i] = monthAmt - take;
+        remaining -= take;
       }
+      if (shortfall > 0) {
+        payouts.push({ monthIdx: selectedMonth, amount: shortfall });
+      }
+      // Anything still left in `arr` is the leftover that wasn't paid out — free it up if
+      // asked, otherwise it stays put as a head start on the next round.
+      if (leftoverAction === "free") {
+        for (let i = 0; i <= selectedMonth; i++) arr[i] = 0;
+      }
+
+      let expenseCategories = h.categories.expense;
+      let expenseBudget = h.budget.expense;
+      let expenseIcons = h.categoryIcons.expense;
+      if (!expenseCategories.includes(cat)) {
+        expenseCategories = [...expenseCategories, cat];
+        expenseBudget = { ...expenseBudget, [cat]: zeros() };
+        expenseIcons = { ...expenseIcons, [cat]: h.categoryIcons?.reserve?.[cat] || null };
+      }
+      const expenseArr = [...(h.actual.expense[cat] || zeros())];
+      const newTransactions = [];
+      payouts.forEach(({ monthIdx, amount }) => {
+        expenseArr[monthIdx] = (expenseArr[monthIdx] || 0) + amount;
+        newTransactions.unshift({
+          id: `${Date.now()}-${cat}-${monthIdx}`,
+          month: monthIdx,
+          type: "expense",
+          category: cat,
+          amount,
+          note: "Paid out from reserve",
+          loggedBy: null,
+        });
+      });
 
       const reopening = postAction === "reopen";
       const archivedReserves = postAction === "archive"
@@ -1515,10 +1549,23 @@ function ReservesView({ household, update, selectedMonth, setSelectedMonth }) {
 
       return {
         ...h,
-        actual: { ...h.actual, reserve: { ...h.actual.reserve, [cat]: arr } },
+        actual: {
+          ...h.actual,
+          reserve: { ...h.actual.reserve, [cat]: arr },
+          expense: { ...h.actual.expense, [cat]: expenseArr },
+        },
+        categories: { ...h.categories, expense: expenseCategories },
+        budget: { ...h.budget, expense: expenseBudget },
+        categoryIcons: { ...h.categoryIcons, expense: expenseIcons },
+        transactions: [...newTransactions, ...h.transactions],
         releasedThrough: { ...h.releasedThrough, [cat]: reopening ? null : selectedMonth },
-        releasedAmount: { ...h.releasedAmount, [cat]: reopening ? null : releasedAmount },
+        // The paid amount is now real expense transactions, so there's nothing left for the
+        // accrual fallback in computeKpis to add on top of — keep it at 0/null either way.
+        releasedAmount: { ...h.releasedAmount, [cat]: reopening ? null : 0 },
         archivedReserves,
+        reserveGoals: reopening
+          ? { ...h.reserveGoals, [cat]: { targetAmount: 0, targetDate: "" } }
+          : h.reserveGoals,
       };
     });
   };
