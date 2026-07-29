@@ -991,69 +991,6 @@ function initialsOf(name) {
   return parts.length > 1 ? (parts[0][0] + parts[1][0]).toUpperCase() : parts[0].slice(0, 2).toUpperCase();
 }
 
-function BulkFillCard({ household, setActualDirect }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <Card style={{ marginBottom: 20 }}>
-      <button
-        onClick={() => setOpen(o => !o)}
-        style={{
-          width: "100%", background: "none", border: "none", cursor: "pointer", display: "flex",
-          alignItems: "center", justifyContent: "space-between", padding: 0,
-        }}
-      >
-        <div>
-          <h3 style={{ ...fontDisplay, fontSize: 17, margin: 0, color: COLORS.ink }}>⚡ Quick fill — enter totals for the whole year</h3>
-          <p style={{ ...fontBody, fontSize: 12, color: COLORS.inkSoft, margin: "4px 0 0" }}>
-            Catching up on past months? Type a total per category per month here instead of logging one purchase at a time.
-          </p>
-        </div>
-        <ChevronLeft size={18} color={COLORS.inkSoft} style={{ transform: open ? "rotate(-90deg)" : "rotate(90deg)", flexShrink: 0 }} />
-      </button>
-
-      {open && (
-        <div style={{ marginTop: 16, overflowX: "auto" }}>
-          <p style={{ ...fontBody, fontSize: 12, color: COLORS.alert, marginBottom: 10 }}>
-            Note: this sets the category's total directly — it replaces whatever was there, and won't create individual entries in "Recent expenses".
-          </p>
-          <table style={{ borderCollapse: "collapse", ...fontBody, fontSize: 12, width: "100%" }}>
-            <thead>
-              <tr>
-                <th style={{ textAlign: "left", padding: "4px 8px", color: COLORS.inkSoft, fontWeight: 600, position: "sticky", left: 0, background: COLORS.card }}>Category</th>
-                {MONTHS.map(m => (
-                  <th key={m} style={{ padding: "4px 6px", color: COLORS.inkSoft, fontWeight: 600, textAlign: "center" }}>{m}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {household.categories.expense.map(cat => (
-                <tr key={cat} style={{ borderTop: `1px solid ${COLORS.border}` }}>
-                  <td style={{ padding: "4px 8px", whiteSpace: "nowrap", position: "sticky", left: 0, background: COLORS.card }}>
-                    {household.categoryIcons?.expense?.[cat] && <span style={{ marginRight: 4 }}>{household.categoryIcons.expense[cat]}</span>}
-                    {cat}
-                  </td>
-                  {MONTHS.map((m, i) => (
-                    <td key={m} style={{ padding: "3px" }}>
-                      <input
-                        type="number" onFocus={e => e.target.select()}
-                        defaultValue={(household.actual.expense[cat] || zeros())[i] || ""}
-                        onBlur={e => setActualDirect(cat, i, Number(e.target.value) || 0)}
-                        style={{
-                          ...fontBody, width: 62, padding: "5px 4px", borderRadius: 6, textAlign: "right",
-                          border: `1.5px solid ${COLORS.gold}`, background: "#FFF8EA", fontSize: 11, outline: "none",
-                        }}
-                      />
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </Card>
-  );
-}
 
 function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
   const [category, setCategory] = useState("");
@@ -1097,14 +1034,6 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
       };
     });
     setAmount(""); setNote("");
-  };
-
-  const setActualDirect = (cat, monthIdx, val) => {
-    update(h => {
-      const arr = [...(h.actual.expense[cat] || zeros())];
-      arr[monthIdx] = val;
-      return { ...h, actual: { ...h.actual, expense: { ...h.actual.expense, [cat]: arr } } };
-    });
   };
 
   const deleteTransaction = (tx) => {
@@ -1189,8 +1118,6 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
           </table>
         ))}
       </Card>
-
-      <BulkFillCard household={household} setActualDirect={setActualDirect} />
 
       <Card style={{ marginBottom: 20 }}>
         <h3 style={{ ...fontDisplay, fontSize: 17, margin: "0 0 14px", color: COLORS.ink }}>Log an expense</h3>
