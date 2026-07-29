@@ -227,13 +227,19 @@ function Card({ children, style }) {
   );
 }
 
-function KpiCard({ icon: Icon, label, value, delta, tone }) {
+function KpiCard({ icon: Icon, label, value, delta, tone, breakdown }) {
+  const [hovered, setHovered] = useState(false);
   return (
-    <div className="kpi-card" style={{
-      background: `linear-gradient(135deg, ${tone} 0%, ${COLORS.primary} 100%)`,
-      borderRadius: 18, padding: "20px 22px", color: "#fff",
-      boxShadow: "0 4px 14px rgba(91,33,89,0.18)",
-    }}>
+    <div
+      className="kpi-card"
+      onMouseEnter={() => breakdown && setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        background: `linear-gradient(135deg, ${tone} 0%, ${COLORS.primary} 100%)`,
+        borderRadius: 18, padding: "20px 22px", color: "#fff",
+        boxShadow: "0 4px 14px rgba(91,33,89,0.18)", position: "relative",
+      }}
+    >
       <div style={{ display: "flex", alignItems: "center", gap: 8, opacity: 0.9, fontSize: 12, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", ...fontBody }}>
         <Icon size={15} /> {label}
       </div>
@@ -242,6 +248,20 @@ function KpiCard({ icon: Icon, label, value, delta, tone }) {
         <div style={{ ...fontBody, fontSize: 12, marginTop: 6, opacity: 0.9, display: "flex", alignItems: "center", gap: 4 }}>
           {delta >= 0 ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
           {fmt(Math.abs(delta))} vs last month
+        </div>
+      )}
+      {breakdown && hovered && breakdown.length > 0 && (
+        <div style={{
+          position: "absolute", top: "calc(100% + 8px)", left: 0, zIndex: 30, minWidth: 200,
+          background: COLORS.card, borderRadius: 12, boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
+          padding: "10px 14px", ...fontBody,
+        }}>
+          {breakdown.map(b => (
+            <div key={b.name} style={{ display: "flex", justifyContent: "space-between", gap: 16, fontSize: 12, color: COLORS.ink, padding: "3px 0" }}>
+              <span>{b.icon && <span>{b.icon} </span>}{b.name}</span>
+              <span style={{ fontWeight: 700 }}>{fmt(b.value)}</span>
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -777,6 +797,11 @@ function Dashboard({ household, selectedMonth, setSelectedMonth }) {
   const spendingMax = Math.max(1, ...spendingData.map(d => d.value));
   const spendingTotal = spendingData.reduce((a, d) => a + d.value, 0);
 
+  const incomeBreakdown = household.categories.income
+    .map(c => ({ name: c, icon: household.categoryIcons?.income?.[c], value: (household.actual.income[c] || zeros()).slice(0, selectedMonth + 1).reduce((a, b) => a + b, 0) }))
+    .filter(d => d.value > 0)
+    .sort((a, b) => b.value - a.value);
+
   const noData = household.transactions.length === 0;
 
   return (
@@ -788,7 +813,7 @@ function Dashboard({ household, selectedMonth, setSelectedMonth }) {
         <KpiCard icon={Wallet} label="Bank balance" value={kpis.bankBalance} tone={COLORS.accent} />
         <KpiCard icon={Sparkles} label="Free to spend" value={kpis.freeToSpend} tone={COLORS.gold} />
         <KpiCard icon={PiggyBank} label="Reserved" value={kpis.reservedTotal} tone={"#6B4C8A"} />
-        <KpiCard icon={TrendingUp} label="Income (YTD)" value={kpis.incomeYtd} tone={COLORS.primary} />
+        <KpiCard icon={TrendingUp} label="Income (YTD)" value={kpis.incomeYtd} tone={COLORS.primary} breakdown={incomeBreakdown} />
       </div>
 
       <div style={{ marginBottom: 20 }}>
