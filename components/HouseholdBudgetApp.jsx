@@ -842,7 +842,7 @@ function Dashboard({ household, selectedMonth, setSelectedMonth }) {
 /* ============================================================
    INCOME VIEW  (styled like Reserves — one card per category)
    ============================================================ */
-function IncomeGoalCard({ cat, icon, planned, actual, sameEveryMonth, copyFromExpected, onPlannedChange, onActualChange, onToggleSame, onToggleCopy }) {
+function IncomeGoalCard({ cat, icon, planned, actual, ytd, sameEveryMonth, copyFromExpected, onPlannedChange, onActualChange, onToggleSame, onToggleCopy }) {
   const diff = actual - planned;
   const pct = planned > 0 ? Math.min(100, (actual / planned) * 100) : (actual > 0 ? 100 : 0);
   const [expectedOpen, setExpectedOpen] = useState(false);
@@ -881,11 +881,14 @@ function IncomeGoalCard({ cat, icon, planned, actual, sameEveryMonth, copyFromEx
           <div style={{ height: 14, width: "100%", background: COLORS.lavender, borderRadius: 8, overflow: "hidden", marginBottom: 6 }}>
             <div style={{ height: "100%", width: `${pct}%`, background: `linear-gradient(90deg, ${COLORS.gold}, ${COLORS.primary})`, transition: "width .4s" }} />
           </div>
-          <p style={{ ...fontBody, fontSize: 13, color: COLORS.ink, margin: "0 0 12px" }}>
+          <p style={{ ...fontBody, fontSize: 13, color: COLORS.ink, margin: "0 0 2px" }}>
             <strong>{fmt(actual)}</strong> received so far
             {planned > 0 && (
               <span style={{ color: diff >= 0 ? COLORS.success : COLORS.alert, fontWeight: 700 }}> · {diff >= 0 ? "+" : ""}{fmt(diff)} vs expected</span>
             )}
+          </p>
+          <p style={{ ...fontBody, fontSize: 11, color: COLORS.inkSoft, margin: "0 0 12px" }}>
+            Year to date: {fmt(ytd)}
           </p>
           <label style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: COLORS.inkSoft, display: "block", marginBottom: 4 }}>
             Actual received this month
@@ -982,6 +985,7 @@ function IncomeView({ household, update, selectedMonth, setSelectedMonth }) {
               icon={household.categoryIcons?.income?.[cat]}
               planned={(household.budget.income[cat] || zeros())[selectedMonth]}
               actual={(household.actual.income[cat] || zeros())[selectedMonth]}
+              ytd={(household.actual.income[cat] || zeros()).slice(0, selectedMonth + 1).reduce((a, b) => a + b, 0)}
               sameEveryMonth={!!household.sameEveryMonth.income[cat]}
               copyFromExpected={!!normalizeMonthFlags(household.copyActualFromExpected.income[cat])[selectedMonth]}
               onPlannedChange={(v) => setPlanned(cat, v)}
