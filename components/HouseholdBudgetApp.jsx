@@ -1776,10 +1776,11 @@ function ReservesView({ household, update, selectedMonth, setSelectedMonth }) {
    DEBT VIEW
    ============================================================ */
 // Builds a payoff schedule: each period, interest accrues on the remaining balance
-// (annual rate ÷ payments per year), the payment covers that interest first and the
-// rest chips away at the principal. Capped at 600 periods (50 years) so a payment
-// too small to cover the interest can't loop forever.
-function buildDebtSchedule(currentAmount, interestRate, paymentFrequency, paymentAmount) {
+// (annual rate ÷ payments per year). If paymentIncludesInterest, the payment is fixed
+// and interest comes out of it first (standard amortization); otherwise the payment is
+// pure principal and interest is extra, added on top. Capped at 600 periods (50 years)
+// so a too-small payment can't loop forever.
+function buildDebtSchedule(currentAmount, interestRate, paymentFrequency, paymentAmount, paymentIncludesInterest) {
   const freq = DEBT_FREQUENCIES.find(f => f.key === paymentFrequency) || DEBT_FREQUENCIES[0];
   const periodRate = (Number(interestRate) || 0) / 100 / freq.perYear;
   let balance = Number(currentAmount) || 0;
@@ -1787,16 +1788,27 @@ function buildDebtSchedule(currentAmount, interestRate, paymentFrequency, paymen
   const rows = [];
   if (balance <= 0 || payment <= 0) return { rows, willNeverPayOff: false, freq };
 
-  const firstInterest = balance * periodRate;
-  const willNeverPayOff = payment <= firstInterest && periodRate > 0;
-  if (willNeverPayOff) return { rows, willNeverPayOff, freq };
+  if (paymentIncludesInterest) {
+    // The payment is fixed; interest comes out of it first, whatever's left reduces the principal.
+    const firstInterest = balance * periodRate;
+    const willNeverPayOff = payment <= firstInterest && periodRate > 0;
+    if (willNeverPayOff) return { rows, willNeverPayOff, freq };
 
-  for (let period = 1; period <= 600 && balance > 0; period++) {
-    const interest = balance * periodRate;
-    const thisPayment = Math.min(payment, balance + interest);
-    const principal = thisPayment - interest;
-    balance = Math.max(0, balance - principal);
-    rows.push({ period, payment: thisPayment, interest, principal, balance });
+    for (let period = 1; period <= 600 && balance > 0; period++) {
+      const interest = balance * periodRate;
+      const thisPayment = Math.min(payment, balance + interest);
+      const principal = thisPayment - interest;
+      balance = Math.max(0, balance - principal);
+      rows.push({ period, payment: thisPayment, interest, principal, balance });
+    }
+  } else {
+    // The payment is pure principal; interest is extra, added on top each period.
+    for (let period = 1; period <= 600 && balance > 0; period++) {
+      const interest = balance * periodRate;
+      const principal = Math.min(payment, balance);
+      balance = Math.max(0, balance - principal);
+      rows.push({ period, payment: principal + interest, interest, principal, balance });
+    }
   }
   return { rows, willNeverPayOff: false, freq };
 }
@@ -1804,7 +1816,8 @@ function buildDebtSchedule(currentAmount, interestRate, paymentFrequency, paymen
 function DebtCard({ debt, onChange, onDelete }) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
-  const { rows, willNeverPayOff, freq } = buildDebtSchedule(debt.currentAmount, debt.interestRate, debt.paymentFrequency, debt.paymentAmount);
+  const paymentIncludesInterest = debt.paymentIncludesInterest ?? true;
+  const { rows, willNeverPayOff, freq } = buildDebtSchedule(debt.currentAmount, debt.interestRate, debt.paymentFrequency, debt.paymentAmount, paymentIncludesInterest);
   const totalInterest = rows.reduce((a, r) => a + r.interest, 0);
   const years = rows.length > 0 ? Math.floor(rows.length / freq.perYear) : 0;
   const remainder = rows.length > 0 ? rows.length % freq.perYear : 0;
@@ -1867,6 +1880,20 @@ function DebtCard({ debt, onChange, onDelete }) {
                 style={{ ...fontBody, width: "100%", boxSizing: "border-box", padding: "8px 10px 8px 26px", borderRadius: 8, border: `1.5px solid ${COLORS.border}`, fontSize: 14, outline: "none" }}
               />
             </div>
+          </div>
+        </div>
+
+        <div>
+          <label style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: COLORS.inkSoft, display: "block", marginBottom: 4 }}>
+            This payment amount is
+          </label>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            <Chip active={paymentIncludesInterest} onClick={() => onChange({ ...debt, paymentIncludesInterest: true })}>
+              Inclusive of interest
+            </Chip>
+            <Chip active={!paymentIncludesInterest} onClick={() => onChange({ ...debt, paymentIncludesInterest: false })}>
+              Exclusive — interest is extra
+            </Chip>
           </div>
         </div>
 
@@ -1962,7 +1989,7 @@ function DebtView({ household, update }) {
       ...h,
       debts: [...(h.debts || []), {
         id: `${Date.now()}-${trimmed}`, name: trimmed, icon: ic || null,
-        currentAmount: 0, interestRate: 0, paymentFrequency: "monthly", paymentAmount: 0,
+        currentAmount: 0, interestRate: 0, paymentFrequency: "monthly", paymentAmount: 0, paymentIncludesInterest: true,
       }],
     }));
   };
