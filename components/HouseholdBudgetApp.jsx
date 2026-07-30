@@ -1971,7 +1971,7 @@ function buildDebtSchedule(currentAmount, interestRate, paymentFrequency, paymen
     }
     balance = Math.max(0, balance - principal);
     const fee = Number(feeOverrides[period]) || 0;
-    rows.push({ period, payment: principal + interest, interest, principal, fee, overridden: override != null, balance });
+    rows.push({ period, payment: principal + interest + fee, interest, principal, fee, overridden: override != null, balance });
   }
   return { rows, willNeverPayOff: false, freq };
 }
