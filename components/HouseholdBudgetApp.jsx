@@ -1150,7 +1150,7 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
       };
       // Logging an expense in a category linked to a debt IS that period's payment —
       // pay it down automatically instead of requiring a separate settle step.
-      const debts = payDownLinkedDebt(h, "expense", category, Number(amount));
+      const debts = payDownLinkedDebt(h, "expense", category, Number(amount), selectedMonth);
       return {
         ...h,
         actual: { ...h.actual, expense: { ...h.actual.expense, [category]: arr } },
@@ -1403,7 +1403,7 @@ function SettleReserveFlow({ savedYtd, onCancel, onSettle }) {
   );
 }
 
-function ReserveGoalCard({ cat, icon, savedYtd, goal, releasedIdx, monthly, selectedMonth, linkedDebt, onGoalChange, onRelease, onSettle, onDelete }) {
+function ReserveGoalCard({ cat, icon, savedYtd, arr, goal, releasedIdx, monthly, selectedMonth, linkedDebt, onGoalChange, onLinkedModeChange, onRelease, onSettle, onDelete }) {
   const isReleased = releasedIdx !== null && releasedIdx !== undefined;
   const [settling, setSettling] = useState(false);
   const target = Number(goal?.targetAmount) || 0;
@@ -1412,13 +1412,26 @@ function ReserveGoalCard({ cat, icon, savedYtd, goal, releasedIdx, monthly, sele
   // entry doesn't get counted twice (once as "saved", once as still "remaining").
   const savedBeforeThisMonth = savedYtd - monthly;
   const stillNeeded = Math.max(0, target - savedBeforeThisMonth);
-  // Linked to a debt: the suggestion is a fixed slice of the *full* amount due next
-  // (principal + interest + any known fee, not just the principal), and it's not
-  // recalculated from what's still needed — an extra top-up one month shouldn't lower
-  // next month's suggestion, since the payment itself doesn't get any smaller.
+  // Linked to a debt: the suggestion is based on the *full* amount due next (principal +
+  // interest + any known fee, not just the principal). Two modes: "add" keeps a fixed
+  // slice every month (extra one month doesn't lower future suggestions — it just pays
+  // down the debt early); "net" instead recalculates from what's still needed for the
+  // current cycle, same as a regular goal, so an extra month lowers what's suggested next.
   const linkedPayment = linkedDebt ? nextDebtPaymentTotal(linkedDebt) : null;
   const linkedFreq = linkedPayment?.freq || null;
-  const suggested = linkedDebt ? linkedPayment.total / linkedPayment.monthsPerPeriod : (target > 0 && remainingMonths !== null ? stillNeeded / remainingMonths : null);
+  const linkedMode = linkedDebt?.reserveSurplusMode || "add";
+  let linkedCycle = null;
+  let linkedStillNeeded = null;
+  if (linkedDebt && linkedMode === "net") {
+    linkedCycle = debtCycleInfo(linkedDebt, selectedMonth);
+    const savedThisCycleBeforeThisMonth = (arr || [])
+      .slice(linkedCycle.cycleStartMonth, selectedMonth)
+      .reduce((a, b) => a + b, 0);
+    linkedStillNeeded = Math.max(0, linkedPayment.total - savedThisCycleBeforeThisMonth);
+  }
+  const suggested = linkedDebt
+    ? (linkedMode === "net" ? linkedStillNeeded / linkedCycle.remainingMonths : linkedPayment.total / linkedPayment.monthsPerPeriod)
+    : (target > 0 && remainingMonths !== null ? stillNeeded / remainingMonths : null);
   const pct = target > 0 ? Math.min(100, (savedYtd / target) * 100) : 0;
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [goalOpen, setGoalOpen] = useState(false);
@@ -1466,9 +1479,20 @@ function ReserveGoalCard({ cat, icon, savedYtd, goal, releasedIdx, monthly, sele
             <p style={{ ...fontBody, fontSize: 12, color: COLORS.primary, fontWeight: 700, margin: "0 0 2px" }}>
               Linked to debt: {linkedDebt.icon ? `${linkedDebt.icon} ` : ""}{linkedDebt.name}
             </p>
-            <p style={{ ...fontBody, fontSize: 11, color: COLORS.inkSoft, margin: 0 }}>
+            <p style={{ ...fontBody, fontSize: 11, color: COLORS.inkSoft, margin: "0 0 8px" }}>
               Saving toward {fmt(linkedPayment.total, 2)} due every {linkedFreq.label.toLowerCase()}
             </p>
+            <p style={{ ...fontBody, fontSize: 11, fontWeight: 700, color: COLORS.inkSoft, margin: "0 0 4px" }}>
+              If you save extra one month
+            </p>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <Chip active={linkedMode === "add"} onClick={() => onLinkedModeChange(linkedDebt.id, "add")}>
+                Pay the debt down early
+              </Chip>
+              <Chip active={linkedMode === "net"} onClick={() => onLinkedModeChange(linkedDebt.id, "net")}>
+                Save less next time
+              </Chip>
+            </div>
           </div>
         ) : (
         /* goal setup, collapsed by default */
@@ -1532,7 +1556,9 @@ function ReserveGoalCard({ cat, icon, savedYtd, goal, releasedIdx, monthly, sele
                 Suggested this month: {fmt(suggested, 2)}
               </p>
               <p style={{ ...fontBody, fontSize: 11, color: COLORS.inkSoft, margin: 0 }}>
-                Fixed amount: {fmt(linkedPayment.total, 2)} ÷ {linkedPayment.monthsPerPeriod} month{linkedPayment.monthsPerPeriod === 1 ? "" : "s"} per {linkedFreq.label.toLowerCase()} payment
+                {linkedMode === "net"
+                  ? `${fmt(linkedStillNeeded, 2)} still needed ÷ ${linkedCycle.remainingMonths} month${linkedCycle.remainingMonths === 1 ? "" : "s"} left in this cycle`
+                  : `Fixed amount: ${fmt(linkedPayment.total, 2)} ÷ ${linkedPayment.monthsPerPeriod} month${linkedPayment.monthsPerPeriod === 1 ? "" : "s"} per ${linkedFreq.label.toLowerCase()} payment`}
               </p>
             </div>
           ) : target > 0 && goal?.targetDate ? (
@@ -1641,6 +1667,9 @@ function ReservesView({ household, update, selectedMonth, setSelectedMonth }) {
   const setGoal = (cat, goal) => {
     update(h => ({ ...h, reserveGoals: { ...h.reserveGoals, [cat]: goal } }));
   };
+  const setLinkedDebtMode = (debtId, mode) => {
+    update(h => ({ ...h, debts: (h.debts || []).map(d => d.id === debtId ? { ...d, reserveSurplusMode: mode } : d) }));
+  };
   const toggleRelease = (cat) => {
     update(h => ({
       ...h,
@@ -1707,7 +1736,7 @@ function ReservesView({ household, update, selectedMonth, setSelectedMonth }) {
 
       // If this reserve is saving up for a debt payment, settling it means the real-world
       // payment just happened — knock it off the debt and advance the schedule.
-      const debts = reopening ? h.debts : payDownLinkedDebt(h, "reserve", cat, paidAmount);
+      const debts = reopening ? h.debts : payDownLinkedDebt(h, "reserve", cat, paidAmount, selectedMonth);
 
       return {
         ...h,
@@ -1929,12 +1958,14 @@ function ReservesView({ household, update, selectedMonth, setSelectedMonth }) {
                       cat={cat}
                       icon={household.categoryIcons?.reserve?.[cat]}
                       savedYtd={savedYtd}
+                      arr={arr}
                       goal={household.reserveGoals?.[cat] || { targetAmount: 0, targetDate: "" }}
                       releasedIdx={household.releasedThrough[cat]}
                       monthly={arr[selectedMonth]}
                       selectedMonth={selectedMonth}
                       linkedDebt={(household.debts || []).find(d => d.linkedCategory?.type === "reserve" && d.linkedCategory?.name === cat) || null}
                       onGoalChange={(g) => setGoal(cat, g)}
+                      onLinkedModeChange={(debtId, mode) => setLinkedDebtMode(debtId, mode)}
                       onRelease={() => toggleRelease(cat)}
                       onSettle={(payload) => settleReserve(cat, payload)}
                       onDelete={() => deleteReserve(cat)}
@@ -2027,6 +2058,21 @@ function nextDebtPaymentTotal(debt) {
   return { total, interest, freq, monthsPerPeriod: 12 / freq.perYear };
 }
 
+// Where the current savings cycle sits, for "spread it out" mode: the cycle starts the
+// month after the debt was last settled (or month 0 if it's never been settled), and
+// runs `monthsPerPeriod` months. If selectedMonth has drifted past that (payment's
+// overdue), roll forward whole cycles until it's caught up.
+function debtCycleInfo(debt, selectedMonth) {
+  const { monthsPerPeriod } = nextDebtPaymentTotal(debt);
+  let cycleStartMonth = debt.lastSettledMonth != null ? debt.lastSettledMonth + 1 : 0;
+  let dueMonth = cycleStartMonth + monthsPerPeriod - 1;
+  while (dueMonth < selectedMonth) {
+    cycleStartMonth += monthsPerPeriod;
+    dueMonth += monthsPerPeriod;
+  }
+  return { cycleStartMonth, dueMonth, remainingMonths: Math.max(1, dueMonth - selectedMonth + 1) };
+}
+
 function addMonthsToDateStr(dateStr, months) {
   if (!dateStr) return null;
   const d = new Date(dateStr + "T00:00:00");
@@ -2040,7 +2086,7 @@ function addMonthsToDateStr(dateStr, months) {
 // off currentAmount, advances paidPeriods (so schedule dates keep counting forward instead
 // of resetting to the first-payment date), and shifts any period-specific overrides down by
 // one so they stay lined up with the period they were actually meant for.
-function payDownLinkedDebt(h, catType, catName, paidAmount) {
+function payDownLinkedDebt(h, catType, catName, paidAmount, selectedMonth) {
   const debts = h.debts || [];
   const idx = debts.findIndex(d => d.linkedCategory?.type === catType && d.linkedCategory?.name === catName);
   if (idx === -1) return debts;
@@ -2072,6 +2118,8 @@ function payDownLinkedDebt(h, catType, catName, paidAmount) {
     paidPeriods: (debt.paidPeriods || 0) + 1,
     paymentOverrides: shiftDown(paymentOverrides),
     feeOverrides: shiftDown(feeOverrides),
+    // Marks where the next savings cycle starts, for "spread it out" mode.
+    lastSettledMonth: selectedMonth,
   };
   const next = [...debts];
   next[idx] = updated;
@@ -2322,7 +2370,9 @@ function DebtCard({ debt, household, previewExtra = 0, onChange, onDelete }) {
                   <p style={{ ...fontBody, fontSize: 11, color: COLORS.primary, margin: "0 0 6px", fontStyle: "italic" }}>
                     {isPreview
                       ? `You've saved ${fmt(previewExtra, 2)} more than a regular month needs — the first row shows that extra paying down principal early. Settle the reserve to lock it in.`
-                      : "The first row's principal isn't editable here — it follows the linked reserve, and only changes once a month saves more than its own target."}
+                      : (debt.reserveSurplusMode === "net"
+                        ? "The first row's principal isn't editable here — it follows the linked reserve. Extra savings are spread into future months instead of paying this down early (change that on the Reserves page)."
+                        : "The first row's principal isn't editable here — it follows the linked reserve, and only changes once a month saves more than its own target.")}
                   </p>
                 )}
                 <div style={{ maxHeight: 320, overflowY: "auto" }}>
@@ -2340,7 +2390,7 @@ function DebtCard({ debt, household, previewExtra = 0, onChange, onDelete }) {
                   <tbody>
                     {rows.map(r => {
                       const dateStr = debt.firstPaymentDate ? addMonthsToDateStr(debt.firstPaymentDate, ((debt.paidPeriods || 0) + r.period - 1) * monthsPerPeriod) : null;
-                      const readOnlyRow = isReserveLinked && r.period === 1;
+                      const readOnlyRow = isReserveLinked;
                       const previewRow = isPreview && r.period === 1;
                       return (
                         <tr
@@ -2413,6 +2463,7 @@ function DebtView({ household, update, selectedMonth }) {
         id: `${Date.now()}-${trimmed}`, name: trimmed, icon: ic || null,
         currentAmount: 0, interestRate: 0, paymentFrequency: "monthly", paymentAmount: 0, paymentIncludesInterest: true,
         firstPaymentDate: "", paymentOverrides: {}, feeOverrides: {}, linkedCategory: null, paidPeriods: 0,
+        reserveSurplusMode: "add", lastSettledMonth: null,
       }],
     }));
   };
@@ -2454,7 +2505,7 @@ function DebtView({ household, update, selectedMonth }) {
             // the whole period's total to be reached. Shortfall months don't cancel out
             // surplus months; they just don't add to it.
             let previewExtra = 0;
-            if (linkedArr) {
+            if (linkedArr && (d.reserveSurplusMode || "add") === "add") {
               const regularMonthly = nextDebtPaymentTotal(d).total / (12 / (DEBT_FREQUENCIES.find(f => f.key === d.paymentFrequency) || DEBT_FREQUENCIES[0]).perYear);
               for (let m = 0; m <= selectedMonth; m++) {
                 previewExtra += Math.max(0, (linkedArr[m] || 0) - regularMonthly);
@@ -2960,6 +3011,7 @@ function normalizeHousehold(h) {
     reserveGoals: h.reserveGoals || {},
     debts: (h.debts || []).map(d => ({
       paymentOverrides: {}, feeOverrides: {}, linkedCategory: null, paidPeriods: 0,
+      reserveSurplusMode: "add", lastSettledMonth: null,
       ...d,
     })),
     sameEveryMonth: { ...empty.sameEveryMonth, ...(h.sameEveryMonth || {}) },
