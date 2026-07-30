@@ -190,20 +190,6 @@ function visibleCategories(household, type, monthIdx) {
   return household.categories[type].filter(c => isCategoryVisible(household, type, c, monthIdx));
 }
 
-// Fills fromMonth..11 with val, leaving months before fromMonth untouched —
-// past months are history and shouldn't change when a "same from here on" toggle is used.
-// Older saved data may have this as a single boolean instead of a 12-month array —
-// treat anything that isn't already a proper array as "not set" for every month.
-function normalizeMonthFlags(x) {
-  return Array.isArray(x) ? x : Array(12).fill(false);
-}
-
-function fillFromMonth(existingArr, fromMonth, val) {
-  const arr = [...existingArr];
-  for (let m = fromMonth; m < 12; m++) arr[m] = val;
-  return arr;
-}
-
 const TODAY = new Date(2026, 6, 14); // fixed "today" for this demo — July 14, 2026
 
 // Months from the viewed month up to (and including) the target month — i.e. how many
@@ -950,151 +936,57 @@ function Dashboard({ household, selectedMonth, setSelectedMonth }) {
 /* ============================================================
    INCOME VIEW  (styled like Reserves — one card per category)
    ============================================================ */
-function IncomeGoalCard({ cat, icon, planned, actual, ytd, sameEveryMonth, copyFromExpected, onPlannedChange, onActualChange, onToggleSame, onToggleCopy }) {
-  const diff = actual - planned;
-  const pct = planned > 0 ? Math.min(100, (actual / planned) * 100) : (actual > 0 ? 100 : 0);
-  const [expectedOpen, setExpectedOpen] = useState(false);
-  return (
-    <Card style={{ marginBottom: 16 }}>
-      <h4 style={{ ...fontDisplay, fontSize: 18, margin: "0 0 14px", color: COLORS.ink, display: "flex", alignItems: "center", gap: 6 }}>
-        <GripVertical size={16} color={COLORS.inkSoft} style={{ cursor: "grab", flexShrink: 0 }} />
-        {icon && <span>{icon} </span>}{cat}
-      </h4>
-      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <div>
-          <button
-            onClick={() => setExpectedOpen(o => !o)}
-            style={{
-              width: "100%", background: "none", border: "none", cursor: "pointer", display: "flex",
-              alignItems: "center", justifyContent: "space-between", padding: 0, marginBottom: 4,
-            }}
-          >
-            <span style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: COLORS.inkSoft }}>
-              Expected this month: {fmt(planned, 2)}
-            </span>
-            <ChevronLeft size={16} color={COLORS.inkSoft} style={{ transform: expectedOpen ? "rotate(90deg)" : "rotate(-90deg)", flexShrink: 0 }} />
-          </button>
-          {expectedOpen && (
-            <>
-              <div style={{ position: "relative" }}>
-                <span style={{ position: "absolute", left: 12, top: 9, ...fontBody, fontSize: 14, color: COLORS.inkSoft }}>{CURRENCY_SYMBOL}</span>
-                <input
-                  type="number" onFocus={e => e.target.select()} value={planned}
-                  onChange={e => onPlannedChange(Number(e.target.value))}
-                  style={{ ...fontBody, width: "100%", boxSizing: "border-box", padding: "8px 10px 8px 26px", borderRadius: 8, border: `1.5px solid ${COLORS.gold}`, background: "#FFF8EA", fontSize: 14, outline: "none" }}
-                />
-              </div>
-              <Checkbox checked={sameEveryMonth} onChange={onToggleSame} label="Same from here on" />
-            </>
-          )}
-        </div>
-        <div>
-          <div style={{ height: 14, width: "100%", background: COLORS.lavender, borderRadius: 8, overflow: "hidden", marginBottom: 6 }}>
-            <div style={{ height: "100%", width: `${pct}%`, background: `linear-gradient(90deg, ${COLORS.gold}, ${COLORS.primary})`, transition: "width .4s" }} />
-          </div>
-          <p style={{ ...fontBody, fontSize: 13, color: COLORS.ink, margin: "0 0 2px" }}>
-            <strong>{fmt(actual, 2)}</strong> received so far
-            {planned > 0 && (
-              <span style={{ color: diff >= 0 ? COLORS.success : COLORS.alert, fontWeight: 700 }}> · {diff >= 0 ? "+" : ""}{fmt(diff, 2)} vs expected</span>
-            )}
-          </p>
-          <p style={{ ...fontBody, fontSize: 11, color: COLORS.inkSoft, margin: "0 0 12px" }}>
-            Year to date: {fmt(ytd, 2)}
-          </p>
-          <label style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: COLORS.inkSoft, display: "block", marginBottom: 4 }}>
-            Actual received this month
-          </label>
-          <input
-            type="number" onFocus={e => e.target.select()} value={actual}
-            disabled={copyFromExpected}
-            onChange={e => onActualChange(Number(e.target.value))}
-            style={{
-              ...fontBody, width: "100%", boxSizing: "border-box", padding: "8px 10px", borderRadius: 8,
-              border: `1.5px solid ${COLORS.primary}`, fontSize: 14, outline: "none",
-              background: copyFromExpected ? COLORS.lavender : "#fff", color: copyFromExpected ? COLORS.inkSoft : COLORS.ink,
-            }}
-          />
-          <Checkbox checked={copyFromExpected} onChange={onToggleCopy} label="Copy from expected" />
-        </div>
-      </div>
-    </Card>
-  );
-}
-
 function IncomeView({ household, update, selectedMonth, setSelectedMonth }) {
-  const [draggedCat, setDraggedCat] = useState(null);
-  const reorderIncome = (fromCat, toCat) => {
-    if (fromCat === toCat) return;
+  const [category, setCategory] = useState("");
+  const [amount, setAmount] = useState("");
+  const [note, setNote] = useState("");
+  const [loggedBy, setLoggedBy] = useState(household.partners?.[0] || "");
+
+  const addTransaction = () => {
+    if (!category || !amount) return;
     update(h => {
-      const arr = [...h.categories.income];
-      const fromIdx = arr.indexOf(fromCat);
-      const toIdx = arr.indexOf(toCat);
-      if (fromIdx === -1 || toIdx === -1) return h;
-      arr.splice(fromIdx, 1);
-      arr.splice(toIdx, 0, fromCat);
-      return { ...h, categories: { ...h.categories, income: arr } };
-    });
-  };
-  const setPlanned = (cat, val) => {
-    update(h => {
-      const same = h.sameEveryMonth.income[cat];
-      const existing = h.budget.income[cat] || zeros();
-      const arr = same ? fillFromMonth(existing, selectedMonth, val) : [...existing];
-      if (!same) arr[selectedMonth] = val;
-      const copy = normalizeMonthFlags(h.copyActualFromExpected.income[cat])[selectedMonth];
-      let newActual = h.actual;
-      if (copy) {
-        // Only mirror into the month currently being viewed/edited — never
-        // pre-fill future months' "actual", since that hasn't really happened yet.
-        const actualArr = [...(h.actual.income[cat] || zeros())];
-        actualArr[selectedMonth] = arr[selectedMonth];
-        newActual = { ...h.actual, income: { ...h.actual.income, [cat]: actualArr } };
-      }
+      const arr = [...(h.actual.income[category] || zeros())];
+      arr[selectedMonth] += Number(amount);
+      const tx = {
+        id: Date.now(), month: selectedMonth, type: "income", category, amount: Number(amount), note, loggedBy: loggedBy || null,
+        date: new Date().toISOString().slice(0, 10),
+      };
       return {
         ...h,
-        budget: { ...h.budget, income: { ...h.budget.income, [cat]: arr } },
-        actual: newActual,
+        actual: { ...h.actual, income: { ...h.actual.income, [category]: arr } },
+        transactions: [tx, ...h.transactions],
+      };
+    });
+    setAmount(""); setNote("");
+  };
+
+  const deleteTransaction = (tx) => {
+    update(h => {
+      const arr = [...(h.actual.income[tx.category] || zeros())];
+      arr[tx.month] = Math.max(0, arr[tx.month] - tx.amount);
+      return {
+        ...h,
+        actual: { ...h.actual, income: { ...h.actual.income, [tx.category]: arr } },
+        transactions: h.transactions.filter(t => t.id !== tx.id),
       };
     });
   };
-  const setActual = (cat, val) => {
-    update(h => {
-      const arr = [...(h.actual.income[cat] || zeros())];
-      arr[selectedMonth] = val;
-      return { ...h, actual: { ...h.actual, income: { ...h.actual.income, [cat]: arr } } };
-    });
+
+  const updateTransactionDate = (txId, date) => {
+    update(h => ({ ...h, transactions: h.transactions.map(t => t.id === txId ? { ...t, date } : t) }));
   };
-  const toggleSame = (cat, checked) => {
-    update(h => {
-      let budgetArr = h.budget.income[cat] || zeros();
-      if (checked) budgetArr = fillFromMonth(budgetArr, selectedMonth, budgetArr[selectedMonth]);
-      return {
-        ...h,
-        sameEveryMonth: { ...h.sameEveryMonth, income: { ...h.sameEveryMonth.income, [cat]: checked } },
-        budget: { ...h.budget, income: { ...h.budget.income, [cat]: budgetArr } },
-      };
-    });
-  };
-  const toggleCopy = (cat, checked) => {
-    update(h => {
-      const budgetArr = h.budget.income[cat] || zeros();
-      const actualArr = [...(h.actual.income[cat] || zeros())];
-      if (checked) actualArr[selectedMonth] = budgetArr[selectedMonth];
-      const copyArr = [...normalizeMonthFlags(h.copyActualFromExpected.income[cat])];
-      copyArr[selectedMonth] = checked;
-      return {
-        ...h,
-        copyActualFromExpected: { ...h.copyActualFromExpected, income: { ...h.copyActualFromExpected.income, [cat]: copyArr } },
-        actual: { ...h.actual, income: { ...h.actual.income, [cat]: actualArr } },
-      };
-    });
-  };
+
+  const incomeTx = household.transactions.filter(t => t.type === "income" && t.month === selectedMonth);
+  const showInitials = household.preferences?.showPartnerInitials && household.partners?.length > 0;
 
   const visibleIncome = visibleCategories(household, "income", selectedMonth);
 
-  const incomeData = visibleIncome
-    .map(c => ({ name: c, value: (household.actual.income[c] || zeros())[selectedMonth] }))
-    .filter(d => d.value > 0);
+  const monthIncomeData = visibleIncome
+    .map(c => ({ name: c, icon: household.categoryIcons?.income?.[c], value: (household.actual.income[c] || zeros())[selectedMonth] }))
+    .filter(d => d.value > 0)
+    .sort((a, b) => b.value - a.value);
+  const monthIncomeMax = Math.max(1, ...monthIncomeData.map(d => d.value));
+  const monthIncomeTotal = monthIncomeData.reduce((a, d) => a + d.value, 0);
 
   const incomeBreakdown = household.categories.income
     .map(c => ({ name: c, icon: household.categoryIcons?.income?.[c], value: (household.actual.income[c] || zeros()).slice(0, selectedMonth + 1).reduce((a, b) => a + b, 0) }))
@@ -1105,62 +997,108 @@ function IncomeView({ household, update, selectedMonth, setSelectedMonth }) {
   return (
     <div className="page-content" style={{ flex: 1 }}>
       <h1 style={{ ...fontDisplay, fontSize: 30, color: COLORS.ink, margin: "0 0 4px" }}>Income</h1>
-      <p style={{ ...fontBody, color: COLORS.inkSoft, margin: "0 0 8px", fontSize: 14, maxWidth: 680 }}>
-        Set what you expect from each source this month, then fill in what actually came in.
-      </p>
+      <p style={{ ...fontBody, color: COLORS.inkSoft, margin: "0 0 24px", fontSize: 14 }}>Log income as it comes in — {MONTHS[selectedMonth]}'s breakdown below.</p>
 
-      <div className="kpi-row" style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 16 }}>
+      <div className="kpi-row" style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 20 }}>
         <KpiCard icon={TrendingUp} label="Income (YTD)" value={incomeYtd} tone={COLORS.primary} breakdown={incomeBreakdown} decimals={2} />
       </div>
 
-      {incomeData.length > 0 && (
-        <Card style={{ marginTop: 16, marginBottom: 4, maxWidth: 420 }}>
-          <h3 style={{ ...fontDisplay, fontSize: 16, margin: "0 0 12px", color: COLORS.ink }}>{MONTHS[selectedMonth]}'s income</h3>
-          <ResponsiveContainer width="100%" height={220}>
-            <PieChart>
-              <Pie data={incomeData} dataKey="value" nameKey="name" innerRadius={45} outerRadius={78} paddingAngle={2}>
-                {incomeData.map((_, i) => <Cell key={i} fill={PALETTE[i % PALETTE.length]} />)}
-              </Pie>
-              <Tooltip formatter={(v) => fmt(v, 2)} />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
-            </PieChart>
-          </ResponsiveContainer>
+      {monthIncomeData.length > 0 && (
+        <Card style={{ marginBottom: 20, maxWidth: 480 }}>
+          <h3 style={{ ...fontDisplay, fontSize: 17, margin: "0 0 14px", color: COLORS.ink }}>{MONTHS[selectedMonth]}'s income</h3>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {monthIncomeData.map((d, i) => (
+              <div key={d.name}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 3 }}>
+                  <span style={{ ...fontBody, fontSize: 12, color: COLORS.ink, display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
+                    <span style={{ width: 9, height: 9, borderRadius: 3, background: PALETTE[i % PALETTE.length], flexShrink: 0 }} />
+                    {d.icon && <span>{d.icon}</span>}
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</span>
+                  </span>
+                  <span style={{ ...fontBody, fontSize: 12, flexShrink: 0, paddingLeft: 8 }}>
+                    <span style={{ fontWeight: 700, color: COLORS.ink }}>{fmt(d.value, 2)}</span>
+                    <span style={{ color: COLORS.inkSoft }}> · {monthIncomeTotal > 0 ? Math.round((d.value / monthIncomeTotal) * 100) : 0}%</span>
+                  </span>
+                </div>
+                <div style={{ height: 8, width: "100%", background: COLORS.lavender, borderRadius: 4, overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${(d.value / monthIncomeMax) * 100}%`, background: PALETTE[i % PALETTE.length], borderRadius: 4 }} />
+                </div>
+              </div>
+            ))}
+          </div>
         </Card>
       )}
 
-      {visibleIncome.length === 0 ? (
-        <Card style={{ textAlign: "center", padding: 40, marginTop: 20 }}>
-          <p style={{ ...fontBody, color: COLORS.inkSoft }}>No income categories yet — add one below.</p>
-        </Card>
-      ) : (
-        <div className="two-col-grid" style={{ marginTop: 20 }}>
-          {visibleIncome.map(cat => (
-            <div
-              key={cat}
-              draggable
-              onDragStart={() => setDraggedCat(cat)}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={() => { if (draggedCat) reorderIncome(draggedCat, cat); setDraggedCat(null); }}
-              onDragEnd={() => setDraggedCat(null)}
-              style={{ opacity: draggedCat === cat ? 0.5 : 1 }}
-            >
-              <IncomeGoalCard
-                cat={cat}
-                icon={household.categoryIcons?.income?.[cat]}
-                planned={(household.budget.income[cat] || zeros())[selectedMonth]}
-                actual={(household.actual.income[cat] || zeros())[selectedMonth]}
-                ytd={(household.actual.income[cat] || zeros()).slice(0, selectedMonth + 1).reduce((a, b) => a + b, 0)}
-                sameEveryMonth={!!household.sameEveryMonth.income[cat]}
-                copyFromExpected={!!normalizeMonthFlags(household.copyActualFromExpected.income[cat])[selectedMonth]}
-                onPlannedChange={(v) => setPlanned(cat, v)}
-                onActualChange={(v) => setActual(cat, v)}
-                onToggleSame={(checked) => toggleSame(cat, checked)}
-                onToggleCopy={(checked) => toggleCopy(cat, checked)}
-              />
-            </div>
-          ))}
+      <Card style={{ marginBottom: 20 }}>
+        <h3 style={{ ...fontDisplay, fontSize: 17, margin: "0 0 14px", color: COLORS.ink }}>Log income</h3>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: household.partners?.length > 0 ? 10 : 0 }}>
+          <select value={category} onChange={e => setCategory(e.target.value)} style={{ ...fontBody, padding: "10px 12px", borderRadius: 8, border: `1.5px solid ${COLORS.border}`, fontSize: 14, minWidth: 180 }}>
+            <option value="">Select source…</option>
+            {visibleIncome.map(c => (
+              <option key={c} value={c}>{household.categoryIcons?.income?.[c] ? `${household.categoryIcons.income[c]} ${c}` : c}</option>
+            ))}
+          </select>
+          <input type="number" onFocus={e => e.target.select()} onKeyDown={e => e.key === "Enter" && addTransaction()} placeholder={`Amount (${CURRENCY_SYMBOL})`} value={amount} onChange={e => setAmount(e.target.value)} style={{ ...fontBody, padding: "10px 12px", borderRadius: 8, border: `1.5px solid ${COLORS.border}`, fontSize: 14, width: 130 }} />
+          <input placeholder="Note (optional)" onKeyDown={e => e.key === "Enter" && addTransaction()} value={note} onChange={e => setNote(e.target.value)} style={{ ...fontBody, padding: "10px 12px", borderRadius: 8, border: `1.5px solid ${COLORS.border}`, fontSize: 14, flex: 1, minWidth: 160 }} />
+          <button onClick={addTransaction} style={{ ...fontBody, background: COLORS.primary, color: "#fff", border: "none", borderRadius: 8, padding: "0 18px", fontWeight: 700, cursor: "pointer" }}>Add</button>
         </div>
-      )}
+        {household.partners?.length > 0 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ ...fontBody, fontSize: 12, color: COLORS.inkSoft, fontWeight: 600 }}>Logged by:</span>
+            {household.partners.map(p => (
+              <Chip key={p} active={loggedBy === p} onClick={() => setLoggedBy(p)}>{p}</Chip>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      <Card>
+        <h3 style={{ ...fontDisplay, fontSize: 16, margin: "0 0 12px", color: COLORS.ink }}>{MONTHS[selectedMonth]} income</h3>
+        {incomeTx.length === 0 ? (
+          <p style={{ ...fontBody, fontSize: 13, color: COLORS.inkSoft }}>Nothing logged for {MONTHS[selectedMonth]} yet.</p>
+        ) : (
+          <div>
+            {incomeTx.slice(0, 15).map(tx => (
+              <div key={tx.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: `1px solid ${COLORS.border}`, ...fontBody, fontSize: 13 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  {showInitials && tx.loggedBy && (
+                    <span style={{
+                      display: "inline-flex", alignItems: "center", justifyContent: "center", width: 22, height: 22,
+                      borderRadius: "50%", background: COLORS.lavender, color: COLORS.primary, fontSize: 10, fontWeight: 800,
+                    }} title={tx.loggedBy}>
+                      {initialsOf(tx.loggedBy)}
+                    </span>
+                  )}
+                  <div>
+                    {household.categoryIcons?.income?.[tx.category] && <span style={{ marginRight: 4 }}>{household.categoryIcons.income[tx.category]}</span>}
+                    <span style={{ fontWeight: 600 }}>{tx.category}</span>
+                    {tx.note && <span style={{ color: COLORS.inkSoft }}> · {tx.note}</span>}
+                    <div>
+                      <input
+                        type="date" value={tx.date || ""} onChange={e => updateTransactionDate(tx.id, e.target.value)}
+                        style={{
+                          ...fontBody, fontSize: 11, color: COLORS.inkSoft, background: "none", border: "none", padding: 0,
+                          outline: "none", cursor: "pointer", marginTop: 2,
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontWeight: 700, color: COLORS.success }}>+{fmt(tx.amount, 2)}</span>
+                  <button
+                    onClick={() => deleteTransaction(tx)}
+                    title="Delete this entry"
+                    style={{ background: "none", border: "none", cursor: "pointer", color: COLORS.inkSoft, display: "flex", padding: 2 }}
+                  >
+                    <X size={15} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
 
       <ChangeCategoriesPanel type="income" suggestions={SUGGESTED.income} household={household} update={update} selectedMonth={selectedMonth} />
     </div>
