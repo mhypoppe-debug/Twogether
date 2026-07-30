@@ -1412,12 +1412,13 @@ function ReserveGoalCard({ cat, icon, savedYtd, goal, releasedIdx, monthly, sele
   // entry doesn't get counted twice (once as "saved", once as still "remaining").
   const savedBeforeThisMonth = savedYtd - monthly;
   const stillNeeded = Math.max(0, target - savedBeforeThisMonth);
-  const linkedFreq = linkedDebt ? (DEBT_FREQUENCIES.find(f => f.key === linkedDebt.paymentFrequency) || DEBT_FREQUENCIES[0]) : null;
-  // Linked to a debt: the suggestion is a fixed slice of the debt's payment, not
+  // Linked to a debt: the suggestion is a fixed slice of the *full* amount due next
+  // (principal + interest + any known fee, not just the principal), and it's not
   // recalculated from what's still needed — an extra top-up one month shouldn't lower
   // next month's suggestion, since the payment itself doesn't get any smaller.
-  const linkedSuggested = linkedDebt ? (Number(linkedDebt.paymentAmount) || 0) / (12 / linkedFreq.perYear) : null;
-  const suggested = linkedDebt ? linkedSuggested : (target > 0 && remainingMonths !== null ? stillNeeded / remainingMonths : null);
+  const linkedPayment = linkedDebt ? nextDebtPaymentTotal(linkedDebt) : null;
+  const linkedFreq = linkedPayment?.freq || null;
+  const suggested = linkedDebt ? linkedPayment.total / linkedPayment.monthsPerPeriod : (target > 0 && remainingMonths !== null ? stillNeeded / remainingMonths : null);
   const pct = target > 0 ? Math.min(100, (savedYtd / target) * 100) : 0;
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [goalOpen, setGoalOpen] = useState(false);
@@ -1466,7 +1467,7 @@ function ReserveGoalCard({ cat, icon, savedYtd, goal, releasedIdx, monthly, sele
               Linked to debt: {linkedDebt.icon ? `${linkedDebt.icon} ` : ""}{linkedDebt.name}
             </p>
             <p style={{ ...fontBody, fontSize: 11, color: COLORS.inkSoft, margin: 0 }}>
-              Saving toward {fmt(linkedDebt.paymentAmount || 0, 2)} due every {linkedFreq.label.toLowerCase()}
+              Saving toward {fmt(linkedPayment.total, 2)} due every {linkedFreq.label.toLowerCase()}
             </p>
           </div>
         ) : (
@@ -1531,7 +1532,7 @@ function ReserveGoalCard({ cat, icon, savedYtd, goal, releasedIdx, monthly, sele
                 Suggested this month: {fmt(suggested, 2)}
               </p>
               <p style={{ ...fontBody, fontSize: 11, color: COLORS.inkSoft, margin: 0 }}>
-                Fixed amount: {fmt(linkedDebt.paymentAmount || 0, 2)} ÷ {12 / linkedFreq.perYear} month{(12 / linkedFreq.perYear) === 1 ? "" : "s"} per {linkedFreq.label.toLowerCase()} payment
+                Fixed amount: {fmt(linkedPayment.total, 2)} ÷ {linkedPayment.monthsPerPeriod} month{linkedPayment.monthsPerPeriod === 1 ? "" : "s"} per {linkedFreq.label.toLowerCase()} payment
               </p>
             </div>
           ) : target > 0 && goal?.targetDate ? (
@@ -2011,6 +2012,21 @@ function buildDebtSchedule(currentAmount, interestRate, paymentFrequency, paymen
   return { rows, willNeverPayOff: false, freq };
 }
 
+// The gross amount actually due for the next unpaid period — as opposed to
+// `debt.paymentAmount`, which (in "exclusive of interest" mode) is only the principal
+// slice. A reserve saving up for this debt needs to cover the whole thing, interest
+// (and any known fee) included, not just the principal part.
+function nextDebtPaymentTotal(debt) {
+  const freq = DEBT_FREQUENCIES.find(f => f.key === debt.paymentFrequency) || DEBT_FREQUENCIES[0];
+  const periodRate = (Number(debt.interestRate) || 0) / 100 / freq.perYear;
+  const interest = (Number(debt.currentAmount) || 0) * periodRate;
+  const basePayment = Number(debt.paymentAmount) || 0;
+  const fee = Number((debt.feeOverrides || {})[1]) || 0;
+  const paymentIncludesInterest = debt.paymentIncludesInterest ?? true;
+  const total = (paymentIncludesInterest ? basePayment : basePayment + interest) + fee;
+  return { total, interest, freq, monthsPerPeriod: 12 / freq.perYear };
+}
+
 function addMonthsToDateStr(dateStr, months) {
   if (!dateStr) return null;
   const d = new Date(dateStr + "T00:00:00");
@@ -2029,17 +2045,17 @@ function payDownLinkedDebt(h, catType, catName, paidAmount) {
   const idx = debts.findIndex(d => d.linkedCategory?.type === catType && d.linkedCategory?.name === catName);
   if (idx === -1) return debts;
   const debt = debts[idx];
-  const paymentIncludesInterest = debt.paymentIncludesInterest ?? true;
   const paymentOverrides = debt.paymentOverrides || {};
   const feeOverrides = debt.feeOverrides || {};
-  const { rows } = buildDebtSchedule(debt.currentAmount, debt.interestRate, debt.paymentFrequency, debt.paymentAmount, paymentIncludesInterest, paymentOverrides, feeOverrides);
-  if (rows.length === 0) return debts;
-
   const balance = Number(debt.currentAmount) || 0;
-  const nextInterest = rows[0].interest;
-  const principal = paymentIncludesInterest
-    ? Math.min(Math.max(0, paidAmount - nextInterest), balance)
-    : Math.min(Math.max(0, paidAmount), balance);
+  if (balance <= 0) return debts;
+
+  // A real payment is the full amount that actually left the bank — interest and fee
+  // included — regardless of whether "payment amount" is configured as inclusive or
+  // exclusive of interest (that toggle only affects how the *planned* schedule is built).
+  const { interest: nextInterest } = nextDebtPaymentTotal(debt);
+  const nextFee = Number(feeOverrides[1]) || 0;
+  const principal = Math.min(Math.max(0, paidAmount - nextInterest - nextFee), balance);
 
   const shiftDown = (map) => {
     const out = {};
@@ -2077,12 +2093,12 @@ function DebtCard({ debt, household, previewSaved = 0, onChange, onDelete }) {
   const isPreview = debt.linkedCategory?.type === "reserve" && previewSaved > 0 && paymentOverrides[1] == null;
   let scheduleOverrides = paymentOverrides;
   if (isPreview) {
-    const freqForPreview = DEBT_FREQUENCIES.find(f => f.key === debt.paymentFrequency) || DEBT_FREQUENCIES[0];
-    const periodRateForPreview = (Number(debt.interestRate) || 0) / 100 / freqForPreview.perYear;
-    const firstPeriodInterest = (Number(debt.currentAmount) || 0) * periodRateForPreview;
-    const previewPrincipal = paymentIncludesInterest
-      ? Math.max(0, previewSaved - firstPeriodInterest)
-      : previewSaved;
+    // previewSaved is money saved toward the FULL next payment (principal + interest +
+    // fee — see nextDebtPaymentTotal) — net those out to get the pure principal the
+    // override table expects.
+    const { interest: firstPeriodInterest } = nextDebtPaymentTotal(debt);
+    const firstPeriodFee = Number(feeOverrides[1]) || 0;
+    const previewPrincipal = Math.max(0, previewSaved - firstPeriodInterest - firstPeriodFee);
     scheduleOverrides = { ...paymentOverrides, 1: previewPrincipal };
   }
 
@@ -2250,7 +2266,7 @@ function DebtCard({ debt, household, previewSaved = 0, onChange, onDelete }) {
                     </select>
                     <p style={{ ...fontBody, fontSize: 11, color: COLORS.inkSoft, margin: 0 }}>
                       {debt.linkedCategory.type === "reserve"
-                        ? `The suggested monthly amount for that reserve becomes a fixed ${fmt((Number(debt.paymentAmount) || 0) / monthsPerPeriod, 2)}/month — settling it pays down ${debt.name} automatically.`
+                        ? `The suggested monthly amount for that reserve becomes a fixed ${fmt(nextDebtPaymentTotal(debt).total / monthsPerPeriod, 2)}/month (covers principal + interest) — settling it pays down ${debt.name} automatically.`
                         : `Logging an expense in "${debt.linkedCategory.name || "…"}" pays down ${debt.name} automatically, as that period's payment.`}
                     </p>
                   </>
