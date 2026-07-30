@@ -2062,14 +2062,31 @@ function payDownLinkedDebt(h, catType, catName, paidAmount) {
   return next;
 }
 
-function DebtCard({ debt, household, onChange, onDelete }) {
+function DebtCard({ debt, household, previewSaved = 0, onChange, onDelete }) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(true);
   const paymentIncludesInterest = debt.paymentIncludesInterest ?? true;
   const paymentOverrides = debt.paymentOverrides || {};
   const feeOverrides = debt.feeOverrides || {};
-  const { rows, willNeverPayOff, freq } = buildDebtSchedule(debt.currentAmount, debt.interestRate, debt.paymentFrequency, debt.paymentAmount, paymentIncludesInterest, paymentOverrides, feeOverrides);
+
+  // Live preview: while a linked reserve is still just being saved up (not yet settled),
+  // show what's been saved so far this period as a tentative principal for the next
+  // payment, so the schedule visibly reacts to extra contributions. Nothing is written to
+  // paymentOverrides until the user actually edits it or the reserve gets settled for real.
+  const isPreview = debt.linkedCategory?.type === "reserve" && previewSaved > 0 && paymentOverrides[1] == null;
+  let scheduleOverrides = paymentOverrides;
+  if (isPreview) {
+    const freqForPreview = DEBT_FREQUENCIES.find(f => f.key === debt.paymentFrequency) || DEBT_FREQUENCIES[0];
+    const periodRateForPreview = (Number(debt.interestRate) || 0) / 100 / freqForPreview.perYear;
+    const firstPeriodInterest = (Number(debt.currentAmount) || 0) * periodRateForPreview;
+    const previewPrincipal = paymentIncludesInterest
+      ? Math.max(0, previewSaved - firstPeriodInterest)
+      : previewSaved;
+    scheduleOverrides = { ...paymentOverrides, 1: previewPrincipal };
+  }
+
+  const { rows, willNeverPayOff, freq } = buildDebtSchedule(debt.currentAmount, debt.interestRate, debt.paymentFrequency, debt.paymentAmount, paymentIncludesInterest, scheduleOverrides, feeOverrides);
   const monthsPerPeriod = 12 / freq.perYear;
 
   const setOverride = (period, value) => {
@@ -2279,7 +2296,13 @@ function DebtCard({ debt, household, onChange, onDelete }) {
               {scheduleOpen ? <ChevronLeft size={16} color={COLORS.inkSoft} style={{ transform: "rotate(90deg)", flexShrink: 0 }} /> : <ChevronLeft size={16} color={COLORS.inkSoft} style={{ transform: "rotate(-90deg)", flexShrink: 0 }} />}
             </button>
             {scheduleOpen && (
-              <div style={{ maxHeight: 320, overflowY: "auto", marginTop: 8 }}>
+              <div style={{ marginTop: 8 }}>
+                {isPreview && (
+                  <p style={{ ...fontBody, fontSize: 11, color: COLORS.primary, margin: "0 0 6px", fontStyle: "italic" }}>
+                    The first row shows {fmt(previewSaved, 2)} saved so far this period — a preview, nothing's paid yet. Settle the reserve to lock it in.
+                  </p>
+                )}
+                <div style={{ maxHeight: 320, overflowY: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", ...fontBody, fontSize: 11 }}>
                   <thead>
                     <tr>
@@ -2294,8 +2317,15 @@ function DebtCard({ debt, household, onChange, onDelete }) {
                   <tbody>
                     {rows.map(r => {
                       const dateStr = debt.firstPaymentDate ? addMonthsToDateStr(debt.firstPaymentDate, ((debt.paidPeriods || 0) + r.period - 1) * monthsPerPeriod) : null;
+                      const previewRow = isPreview && r.period === 1;
                       return (
-                        <tr key={r.period} style={{ borderTop: `1px solid ${COLORS.border}`, background: r.overridden ? COLORS.lavender : "transparent" }}>
+                        <tr
+                          key={r.period}
+                          style={{
+                            borderTop: previewRow ? `1px dashed ${COLORS.gold}` : `1px solid ${COLORS.border}`,
+                            background: previewRow ? "#FFF8EA" : (r.overridden ? COLORS.lavender : "transparent"),
+                          }}
+                        >
                           {debt.firstPaymentDate && <td style={{ padding: "4px 6px", whiteSpace: "nowrap" }}>{formatDate(dateStr)}</td>}
                           <td style={{ padding: "4px 6px", textAlign: "right" }}>{fmt(r.payment)}</td>
                           <td style={{ padding: "4px 6px", textAlign: "right", color: COLORS.alert }}>{fmt(r.interest)}</td>
@@ -2328,6 +2358,7 @@ function DebtCard({ debt, household, onChange, onDelete }) {
                     })}
                   </tbody>
                 </table>
+                </div>
               </div>
             )}
           </div>
@@ -2337,7 +2368,7 @@ function DebtCard({ debt, household, onChange, onDelete }) {
   );
 }
 
-function DebtView({ household, update }) {
+function DebtView({ household, update, selectedMonth }) {
   const [val, setVal] = useState("");
   const [icon, setIcon] = useState(null);
   const [addOpen, setAddOpen] = useState(false);
@@ -2385,7 +2416,18 @@ function DebtView({ household, update }) {
       ) : (
         <div className="debt-grid" style={{ marginTop: 20 }}>
           {debts.map(d => (
-            <DebtCard key={d.id} debt={d} household={household} onChange={(next) => updateDebt(d.id, next)} onDelete={() => deleteDebt(d.id)} />
+            <DebtCard
+              key={d.id}
+              debt={d}
+              household={household}
+              previewSaved={
+                d.linkedCategory?.type === "reserve"
+                  ? (household.actual.reserve[d.linkedCategory.name] || zeros()).slice(0, selectedMonth + 1).reduce((a, b) => a + b, 0)
+                  : 0
+              }
+              onChange={(next) => updateDebt(d.id, next)}
+              onDelete={() => deleteDebt(d.id)}
+            />
           ))}
         </div>
       )}
@@ -3359,7 +3401,7 @@ export default function HouseholdBudgetApp() {
             {view === "income" && <IncomeView household={household} update={update} selectedMonth={selectedMonth} />}
             {view === "expenses" && <ExpensesView household={household} update={update} selectedMonth={selectedMonth} />}
             {view === "reserves" && <ReservesView household={household} update={update} selectedMonth={selectedMonth} />}
-            {view === "debt" && <DebtView household={household} update={update} />}
+            {view === "debt" && <DebtView household={household} update={update} selectedMonth={selectedMonth} />}
             {view === "categories" && <CategoriesView household={household} update={update} sessionPassword={sessionPassword} onRename={handleRename} />}
           </div>
         </div>
