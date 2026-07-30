@@ -2078,7 +2078,7 @@ function payDownLinkedDebt(h, catType, catName, paidAmount) {
   return next;
 }
 
-function DebtCard({ debt, household, previewSaved = 0, onChange, onDelete }) {
+function DebtCard({ debt, household, previewExtra = 0, onChange, onDelete }) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(true);
@@ -2088,20 +2088,16 @@ function DebtCard({ debt, household, previewSaved = 0, onChange, onDelete }) {
 
   // When linked to a reserve, period 1's principal always follows the reserve — it's
   // never manually editable, and any stale override from before it was linked no longer
-  // applies. Mid-way through saving up (not yet at the full target for this period), the
-  // schedule still shows the normal planned principal, so it doesn't look like the payoff
-  // shrank just because you're only partway through the period. Only once you've saved
-  // *more* than the full period target does the surplus show up as extra principal —
-  // that's the "I topped up extra this month" case the preview is actually for.
+  // applies. Each month is checked against that month's own target (see previewExtra in
+  // DebtView) — saving more than a given month needs shows up right away as extra
+  // principal, it doesn't wait for the whole period's total to be reached.
   const isReserveLinked = debt.linkedCategory?.type === "reserve";
   let scheduleOverrides = paymentOverrides;
-  let previewExtra = 0;
   if (isReserveLinked) {
     const rest = { ...paymentOverrides };
     delete rest[1];
-    const { total: regularTotal, interest: firstPeriodInterest } = nextDebtPaymentTotal(debt);
-    previewExtra = Math.max(0, previewSaved - regularTotal);
     if (previewExtra > 0) {
+      const { interest: firstPeriodInterest } = nextDebtPaymentTotal(debt);
       const regularPrincipal = paymentIncludesInterest
         ? Math.max(0, (Number(debt.paymentAmount) || 0) - firstPeriodInterest)
         : Math.max(0, Number(debt.paymentAmount) || 0);
@@ -2325,8 +2321,8 @@ function DebtCard({ debt, household, previewSaved = 0, onChange, onDelete }) {
                 {isReserveLinked && (
                   <p style={{ ...fontBody, fontSize: 11, color: COLORS.primary, margin: "0 0 6px", fontStyle: "italic" }}>
                     {isPreview
-                      ? `You've saved ${fmt(previewSaved, 2)} — ${fmt(previewExtra, 2)} more than this period needs, so the first row shows that extra paying down principal early. Settle the reserve to lock it in.`
-                      : "The first row's principal isn't editable here — it follows the linked reserve, and only changes once you've saved more than this period needs."}
+                      ? `You've saved ${fmt(previewExtra, 2)} more than a regular month needs — the first row shows that extra paying down principal early. Settle the reserve to lock it in.`
+                      : "The first row's principal isn't editable here — it follows the linked reserve, and only changes once a month saves more than its own target."}
                   </p>
                 )}
                 <div style={{ maxHeight: 320, overflowY: "auto" }}>
@@ -2449,20 +2445,32 @@ function DebtView({ household, update, selectedMonth }) {
         </Card>
       ) : (
         <div className="debt-grid" style={{ marginTop: 20 }}>
-          {debts.map(d => (
+          {debts.map(d => {
+            const linkedArr = d.linkedCategory?.type === "reserve"
+              ? (household.actual.reserve[d.linkedCategory.name] || zeros())
+              : null;
+            // Each month is checked against that month's own fixed target — saving more
+            // than a given month needs counts as extra right away, it doesn't wait for
+            // the whole period's total to be reached. Shortfall months don't cancel out
+            // surplus months; they just don't add to it.
+            let previewExtra = 0;
+            if (linkedArr) {
+              const regularMonthly = nextDebtPaymentTotal(d).total / (12 / (DEBT_FREQUENCIES.find(f => f.key === d.paymentFrequency) || DEBT_FREQUENCIES[0]).perYear);
+              for (let m = 0; m <= selectedMonth; m++) {
+                previewExtra += Math.max(0, (linkedArr[m] || 0) - regularMonthly);
+              }
+            }
+            return (
             <DebtCard
               key={d.id}
               debt={d}
               household={household}
-              previewSaved={
-                d.linkedCategory?.type === "reserve"
-                  ? (household.actual.reserve[d.linkedCategory.name] || zeros()).slice(0, selectedMonth + 1).reduce((a, b) => a + b, 0)
-                  : 0
-              }
+              previewExtra={previewExtra}
               onChange={(next) => updateDebt(d.id, next)}
               onDelete={() => deleteDebt(d.id)}
             />
-          ))}
+            );
+          })}
         </div>
       )}
 
