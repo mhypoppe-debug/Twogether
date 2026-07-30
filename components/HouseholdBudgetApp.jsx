@@ -1004,10 +1004,6 @@ function IncomeView({ household, update, selectedMonth, setSelectedMonth }) {
       <h1 style={{ ...fontDisplay, fontSize: 30, color: COLORS.ink, margin: "0 0 4px" }}>Income</h1>
       <p style={{ ...fontBody, color: COLORS.inkSoft, margin: "0 0 24px", fontSize: 14 }}>Log income as it comes in — {MONTHS[selectedMonth]}'s breakdown below.</p>
 
-      <div className="kpi-row" style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 20 }}>
-        <KpiCard icon={TrendingUp} label="Income (YTD)" value={incomeYtd} tone={COLORS.primary} breakdown={incomeBreakdown} decimals={2} />
-      </div>
-
       {(monthIncomeData.length > 0 || incomeBreakdown.length > 0) && (
         <Card style={{ marginBottom: 20, maxWidth: 480 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, gap: 8 }}>
