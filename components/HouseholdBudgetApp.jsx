@@ -872,7 +872,7 @@ function Dashboard({ household, selectedMonth, setSelectedMonth }) {
   return (
     <div className="page-content" style={{ flex: 1 }}>
       <h1 style={{ ...fontDisplay, fontSize: 30, color: COLORS.ink, margin: "0 0 4px" }}>Where you stand</h1>
-      <p style={{ ...fontBody, color: COLORS.inkSoft, margin: "0 0 20px", fontSize: 14 }}>{MONTHS[selectedMonth]} 2026</p>
+      <p style={{ ...fontBody, color: COLORS.inkSoft, margin: "0 0 20px", fontSize: 14 }}>{MONTHS[selectedMonth]} {new Date().getFullYear()}</p>
 
       <div className="kpi-row" style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 20 }}>
         <KpiCard icon={Wallet} label="Bank balance" value={kpis.bankBalance} tone={COLORS.accent} />
