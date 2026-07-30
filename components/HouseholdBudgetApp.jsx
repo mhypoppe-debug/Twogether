@@ -1945,7 +1945,7 @@ function ReservesView({ household, update, selectedMonth, setSelectedMonth }) {
 // `principalOverrides` lets specific payment numbers pay down a different amount of
 // principal that period, without changing the regular payment going forward. Capped at
 // 600 periods (50 years) so a too-small payment can't loop forever.
-function buildDebtSchedule(currentAmount, interestRate, paymentFrequency, paymentAmount, paymentIncludesInterest, principalOverrides = {}) {
+function buildDebtSchedule(currentAmount, interestRate, paymentFrequency, paymentAmount, paymentIncludesInterest, principalOverrides = {}, feeOverrides = {}) {
   const freq = DEBT_FREQUENCIES.find(f => f.key === paymentFrequency) || DEBT_FREQUENCIES[0];
   const periodRate = (Number(interestRate) || 0) / 100 / freq.perYear;
   let balance = Number(currentAmount) || 0;
@@ -1970,7 +1970,8 @@ function buildDebtSchedule(currentAmount, interestRate, paymentFrequency, paymen
       principal = Math.min(basePayment, balance);
     }
     balance = Math.max(0, balance - principal);
-    rows.push({ period, payment: principal + interest, interest, principal, overridden: override != null, balance });
+    const fee = Number(feeOverrides[period]) || 0;
+    rows.push({ period, payment: principal + interest, interest, principal, fee, overridden: override != null, balance });
   }
   return { rows, willNeverPayOff: false, freq };
 }
@@ -1989,14 +1990,19 @@ function DebtCard({ debt, onChange, onDelete }) {
   const [scheduleOpen, setScheduleOpen] = useState(true);
   const paymentIncludesInterest = debt.paymentIncludesInterest ?? true;
   const paymentOverrides = debt.paymentOverrides || {};
-  const { rows, willNeverPayOff, freq } = buildDebtSchedule(debt.currentAmount, debt.interestRate, debt.paymentFrequency, debt.paymentAmount, paymentIncludesInterest, paymentOverrides);
+  const feeOverrides = debt.feeOverrides || {};
+  const { rows, willNeverPayOff, freq } = buildDebtSchedule(debt.currentAmount, debt.interestRate, debt.paymentFrequency, debt.paymentAmount, paymentIncludesInterest, paymentOverrides, feeOverrides);
   const monthsPerPeriod = 12 / freq.perYear;
 
   const setOverride = (period, value) => {
     onChange({ ...debt, paymentOverrides: { ...paymentOverrides, [period]: value } });
   };
+  const setFee = (period, value) => {
+    onChange({ ...debt, feeOverrides: { ...feeOverrides, [period]: value } });
+  };
 
   const totalInterest = rows.reduce((a, r) => a + r.interest, 0);
+  const totalFees = rows.reduce((a, r) => a + r.fee, 0);
   const years = rows.length > 0 ? Math.floor(rows.length / freq.perYear) : 0;
   const remainder = rows.length > 0 ? rows.length % freq.perYear : 0;
 
@@ -2136,6 +2142,7 @@ function DebtCard({ debt, onChange, onDelete }) {
               </p>
               <p style={{ ...fontBody, fontSize: 11, color: COLORS.inkSoft, margin: 0 }}>
                 Total interest paid: {fmt(totalInterest)}
+                {totalFees > 0 && ` · Total bank fees: ${fmt(totalFees)}`}
               </p>
             </>
           )}
@@ -2159,10 +2166,10 @@ function DebtCard({ debt, onChange, onDelete }) {
                   <thead>
                     <tr>
                       {debt.firstPaymentDate && <th style={{ textAlign: "left", padding: "4px 6px", color: COLORS.inkSoft, fontWeight: 600, position: "sticky", top: 0, background: COLORS.card }}>Date</th>}
-                      <th style={{ textAlign: "left", padding: "4px 6px", color: COLORS.inkSoft, fontWeight: 600, position: "sticky", top: 0, background: COLORS.card }}>#</th>
                       <th style={{ textAlign: "right", padding: "4px 6px", color: COLORS.inkSoft, fontWeight: 600, position: "sticky", top: 0, background: COLORS.card }}>Payment</th>
                       <th style={{ textAlign: "right", padding: "4px 6px", color: COLORS.inkSoft, fontWeight: 600, position: "sticky", top: 0, background: COLORS.card }}>Interest</th>
                       <th style={{ textAlign: "right", padding: "4px 6px", color: COLORS.inkSoft, fontWeight: 600, position: "sticky", top: 0, background: COLORS.card }}>Principal</th>
+                      <th style={{ textAlign: "right", padding: "4px 6px", color: COLORS.inkSoft, fontWeight: 600, position: "sticky", top: 0, background: COLORS.card }}>Bank fee</th>
                       <th style={{ textAlign: "right", padding: "4px 6px", color: COLORS.inkSoft, fontWeight: 600, position: "sticky", top: 0, background: COLORS.card }}>Balance</th>
                     </tr>
                   </thead>
@@ -2172,7 +2179,6 @@ function DebtCard({ debt, onChange, onDelete }) {
                       return (
                         <tr key={r.period} style={{ borderTop: `1px solid ${COLORS.border}`, background: r.overridden ? COLORS.lavender : "transparent" }}>
                           {debt.firstPaymentDate && <td style={{ padding: "4px 6px", whiteSpace: "nowrap" }}>{formatDate(dateStr)}</td>}
-                          <td style={{ padding: "4px 6px" }}>{r.period}</td>
                           <td style={{ padding: "4px 6px", textAlign: "right" }}>{fmt(r.payment)}</td>
                           <td style={{ padding: "4px 6px", textAlign: "right", color: COLORS.alert }}>{fmt(r.interest)}</td>
                           <td style={{ padding: "4px 6px", textAlign: "right" }}>
@@ -2183,6 +2189,18 @@ function DebtCard({ debt, onChange, onDelete }) {
                               style={{
                                 ...fontBody, width: 66, textAlign: "right", padding: "3px 5px", borderRadius: 5, fontSize: 11, outline: "none",
                                 border: `1.5px solid ${r.overridden ? COLORS.primary : COLORS.border}`, background: "#fff", color: COLORS.success,
+                              }}
+                            />
+                          </td>
+                          <td style={{ padding: "4px 6px", textAlign: "right" }}>
+                            <input
+                              type="number" onFocus={e => e.target.select()}
+                              value={r.fee || ""}
+                              placeholder="0"
+                              onChange={e => setFee(r.period, Number(e.target.value))}
+                              style={{
+                                ...fontBody, width: 56, textAlign: "right", padding: "3px 5px", borderRadius: 5, fontSize: 11, outline: "none",
+                                border: `1.5px solid ${r.fee > 0 ? COLORS.primary : COLORS.border}`, background: "#fff", color: COLORS.ink,
                               }}
                             />
                           </td>
@@ -2215,7 +2233,7 @@ function DebtView({ household, update }) {
       debts: [...(h.debts || []), {
         id: `${Date.now()}-${trimmed}`, name: trimmed, icon: ic || null,
         currentAmount: 0, interestRate: 0, paymentFrequency: "monthly", paymentAmount: 0, paymentIncludesInterest: true,
-        firstPaymentDate: "", paymentOverrides: {},
+        firstPaymentDate: "", paymentOverrides: {}, feeOverrides: {},
       }],
     }));
   };
