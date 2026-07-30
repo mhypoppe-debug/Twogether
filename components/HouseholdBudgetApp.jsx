@@ -123,10 +123,11 @@ let DATE_FORMAT = "MDY";
 let DENSITY = "comfortable"; // "comfortable" | "compact"
 const spacing = (comfortable, compact) => (DENSITY === "compact" ? compact : comfortable);
 
-const fmt = (n) => {
+// decimals defaults to 0 (Dashboard and Debt show whole numbers); other tabs pass 2.
+const fmt = (n, decimals = 0) => {
   const v = Number(n) || 0;
   const neg = v < 0;
-  return (neg ? `-${CURRENCY_SYMBOL}` : CURRENCY_SYMBOL) + Math.abs(v).toLocaleString(NUMBER_LOCALE, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  return (neg ? `-${CURRENCY_SYMBOL}` : CURRENCY_SYMBOL) + Math.abs(v).toLocaleString(NUMBER_LOCALE, { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 };
 
 function formatDate(dateStr) {
@@ -257,7 +258,7 @@ function Card({ children, style }) {
   );
 }
 
-function KpiCard({ icon: Icon, label, value, delta, tone, breakdown }) {
+function KpiCard({ icon: Icon, label, value, delta, tone, breakdown, decimals = 0 }) {
   const [hovered, setHovered] = useState(false);
   return (
     <div
@@ -273,11 +274,11 @@ function KpiCard({ icon: Icon, label, value, delta, tone, breakdown }) {
       <div style={{ display: "flex", alignItems: "center", gap: 8, opacity: 0.9, fontSize: 12, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", ...fontBody }}>
         <Icon size={15} /> {label}
       </div>
-      <div className="kpi-value" style={{ ...fontDisplay, fontSize: 30, fontWeight: 600, marginTop: 8 }}>{fmt(value)}</div>
+      <div className="kpi-value" style={{ ...fontDisplay, fontSize: 30, fontWeight: 600, marginTop: 8 }}>{fmt(value, decimals)}</div>
       {delta !== undefined && (
         <div style={{ ...fontBody, fontSize: 12, marginTop: 6, opacity: 0.9, display: "flex", alignItems: "center", gap: 4 }}>
           {delta >= 0 ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
-          {fmt(Math.abs(delta))} vs last month
+          {fmt(Math.abs(delta), decimals)} vs last month
         </div>
       )}
       {breakdown && hovered && breakdown.length > 0 && (
@@ -289,7 +290,7 @@ function KpiCard({ icon: Icon, label, value, delta, tone, breakdown }) {
           {breakdown.map(b => (
             <div key={b.name} style={{ display: "flex", justifyContent: "space-between", gap: 16, fontSize: 12, color: COLORS.ink, padding: "3px 0" }}>
               <span>{b.icon && <span>{b.icon} </span>}{b.name}</span>
-              <span style={{ fontWeight: 700, whiteSpace: "nowrap", paddingLeft: 10 }}>{b.display ?? fmt(b.value)}</span>
+              <span style={{ fontWeight: 700, whiteSpace: "nowrap", paddingLeft: 10 }}>{b.display ?? fmt(b.value, decimals)}</span>
             </div>
           ))}
         </div>
@@ -969,7 +970,7 @@ function IncomeGoalCard({ cat, icon, planned, actual, ytd, sameEveryMonth, copyF
             }}
           >
             <span style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: COLORS.inkSoft }}>
-              Expected this month: {fmt(planned)}
+              Expected this month: {fmt(planned, 2)}
             </span>
             <ChevronLeft size={16} color={COLORS.inkSoft} style={{ transform: expectedOpen ? "rotate(90deg)" : "rotate(-90deg)", flexShrink: 0 }} />
           </button>
@@ -992,13 +993,13 @@ function IncomeGoalCard({ cat, icon, planned, actual, ytd, sameEveryMonth, copyF
             <div style={{ height: "100%", width: `${pct}%`, background: `linear-gradient(90deg, ${COLORS.gold}, ${COLORS.primary})`, transition: "width .4s" }} />
           </div>
           <p style={{ ...fontBody, fontSize: 13, color: COLORS.ink, margin: "0 0 2px" }}>
-            <strong>{fmt(actual)}</strong> received so far
+            <strong>{fmt(actual, 2)}</strong> received so far
             {planned > 0 && (
-              <span style={{ color: diff >= 0 ? COLORS.success : COLORS.alert, fontWeight: 700 }}> · {diff >= 0 ? "+" : ""}{fmt(diff)} vs expected</span>
+              <span style={{ color: diff >= 0 ? COLORS.success : COLORS.alert, fontWeight: 700 }}> · {diff >= 0 ? "+" : ""}{fmt(diff, 2)} vs expected</span>
             )}
           </p>
           <p style={{ ...fontBody, fontSize: 11, color: COLORS.inkSoft, margin: "0 0 12px" }}>
-            Year to date: {fmt(ytd)}
+            Year to date: {fmt(ytd, 2)}
           </p>
           <label style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: COLORS.inkSoft, display: "block", marginBottom: 4 }}>
             Actual received this month
@@ -1109,7 +1110,7 @@ function IncomeView({ household, update, selectedMonth, setSelectedMonth }) {
       </p>
 
       <div className="kpi-row" style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 16 }}>
-        <KpiCard icon={TrendingUp} label="Income (YTD)" value={incomeYtd} tone={COLORS.primary} breakdown={incomeBreakdown} />
+        <KpiCard icon={TrendingUp} label="Income (YTD)" value={incomeYtd} tone={COLORS.primary} breakdown={incomeBreakdown} decimals={2} />
       </div>
 
       {incomeData.length > 0 && (
@@ -1120,7 +1121,7 @@ function IncomeView({ household, update, selectedMonth, setSelectedMonth }) {
               <Pie data={incomeData} dataKey="value" nameKey="name" innerRadius={45} outerRadius={78} paddingAngle={2}>
                 {incomeData.map((_, i) => <Cell key={i} fill={PALETTE[i % PALETTE.length]} />)}
               </Pie>
-              <Tooltip formatter={(v) => fmt(v)} />
+              <Tooltip formatter={(v) => fmt(v, 2)} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
             </PieChart>
           </ResponsiveContainer>
@@ -1187,7 +1188,10 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
     update(h => {
       const arr = [...(h.actual.expense[category] || zeros())];
       arr[selectedMonth] += Number(amount);
-      const tx = { id: Date.now(), month: selectedMonth, type: "expense", category, amount: Number(amount), note, loggedBy: loggedBy || null };
+      const tx = {
+        id: Date.now(), month: selectedMonth, type: "expense", category, amount: Number(amount), note, loggedBy: loggedBy || null,
+        date: new Date().toISOString().slice(0, 10),
+      };
       return {
         ...h,
         actual: { ...h.actual, expense: { ...h.actual.expense, [category]: arr } },
@@ -1207,6 +1211,10 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
         transactions: h.transactions.filter(t => t.id !== tx.id),
       };
     });
+  };
+
+  const updateTransactionDate = (txId, date) => {
+    update(h => ({ ...h, transactions: h.transactions.map(t => t.id === txId ? { ...t, date } : t) }));
   };
 
   const expenseTx = household.transactions.filter(t => t.type === "expense" && t.month === selectedMonth);
@@ -1239,7 +1247,7 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
                     <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</span>
                   </span>
                   <span style={{ ...fontBody, fontSize: 12, flexShrink: 0, paddingLeft: 8 }}>
-                    <span style={{ fontWeight: 700, color: COLORS.ink }}>{fmt(d.value)}</span>
+                    <span style={{ fontWeight: 700, color: COLORS.ink }}>{fmt(d.value, 2)}</span>
                     <span style={{ color: COLORS.inkSoft }}> · {monthExpenseTotal > 0 ? Math.round((d.value / monthExpenseTotal) * 100) : 0}%</span>
                   </span>
                 </div>
@@ -1296,10 +1304,19 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
                     {household.categoryIcons?.expense?.[tx.category] && <span style={{ marginRight: 4 }}>{household.categoryIcons.expense[tx.category]}</span>}
                     <span style={{ fontWeight: 600 }}>{tx.category}</span>
                     {tx.note && <span style={{ color: COLORS.inkSoft }}> · {tx.note}</span>}
+                    <div>
+                      <input
+                        type="date" value={tx.date || ""} onChange={e => updateTransactionDate(tx.id, e.target.value)}
+                        style={{
+                          ...fontBody, fontSize: 11, color: COLORS.inkSoft, background: "none", border: "none", padding: 0,
+                          outline: "none", cursor: "pointer", marginTop: 2,
+                        }}
+                      />
+                    </div>
                   </div>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <span style={{ fontWeight: 700, color: COLORS.ink }}>-{fmt(tx.amount)}</span>
+                  <span style={{ fontWeight: 700, color: COLORS.ink }}>-{fmt(tx.amount, 2)}</span>
                   <button
                     onClick={() => deleteTransaction(tx)}
                     title="Delete this entry"
@@ -1351,7 +1368,7 @@ function SettleReserveFlow({ savedYtd, onCancel, onSettle }) {
       {step === "amount" && (
         <>
           <p style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: COLORS.ink, margin: "0 0 6px" }}>
-            You'd saved {fmt(savedYtd)} for this. What was actually paid?
+            You'd saved {fmt(savedYtd, 2)} for this. What was actually paid?
           </p>
           <div style={{ display: "flex", gap: 8 }}>
             <input
@@ -1366,7 +1383,7 @@ function SettleReserveFlow({ savedYtd, onCancel, onSettle }) {
           </div>
           {diff > 0 && (
             <p style={{ ...fontBody, fontSize: 11, color: COLORS.inkSoft, margin: "6px 0 0" }}>
-              That's {fmt(diff)} more than you'd saved — we'll add it to this month.
+              That's {fmt(diff, 2)} more than you'd saved — we'll add it to this month.
             </p>
           )}
         </>
@@ -1375,7 +1392,7 @@ function SettleReserveFlow({ savedYtd, onCancel, onSettle }) {
       {step === "leftover" && (
         <>
           <p style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: COLORS.ink, margin: "0 0 8px" }}>
-            You have {fmt(-diff)} left over. What do you want to do with it?
+            You have {fmt(-diff, 2)} left over. What do you want to do with it?
           </p>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {stepButton(() => chooseLeftover("free"), "Free it up to spend", true)}
@@ -1425,7 +1442,7 @@ function ReserveGoalCard({ cat, icon, savedYtd, goal, releasedIdx, monthly, sele
           {isReleased && <span style={{ ...fontBody, fontSize: 11, background: COLORS.lavender, color: COLORS.primary, padding: "3px 8px", borderRadius: 12, fontWeight: 700 }}>Paid</span>}
           {confirmingDelete ? (
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ ...fontBody, fontSize: 11, color: COLORS.inkSoft }}>Delete & free up {fmt(savedYtd)}?</span>
+              <span style={{ ...fontBody, fontSize: 11, color: COLORS.inkSoft }}>Delete & free up {fmt(savedYtd, 2)}?</span>
               <button
                 onClick={onDelete}
                 style={{ ...fontBody, fontSize: 11, fontWeight: 700, color: "#fff", background: COLORS.alert, border: "none", borderRadius: 6, padding: "4px 8px", cursor: "pointer" }}
@@ -1462,7 +1479,7 @@ function ReserveGoalCard({ cat, icon, savedYtd, goal, releasedIdx, monthly, sele
             }}
           >
             <span style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: COLORS.inkSoft }}>
-              {target > 0 ? `Goal: ${fmt(target)}${goal?.targetDate ? ` · due ${formatDate(goal.targetDate)}` : ""}` : "No goal set"}
+              {target > 0 ? `Goal: ${fmt(target, 2)}${goal?.targetDate ? ` · due ${formatDate(goal.targetDate)}` : ""}` : "No goal set"}
             </span>
             <ChevronLeft size={16} color={COLORS.inkSoft} style={{ transform: goalOpen ? "rotate(90deg)" : "rotate(-90deg)", flexShrink: 0 }} />
           </button>
@@ -1503,16 +1520,16 @@ function ReserveGoalCard({ cat, icon, savedYtd, goal, releasedIdx, monthly, sele
             <div style={{ height: "100%", width: `${pct}%`, background: `linear-gradient(90deg, ${COLORS.gold}, ${COLORS.primary})`, transition: "width .4s" }} />
           </div>
           <p style={{ ...fontBody, fontSize: 13, color: COLORS.ink, margin: "0 0 12px" }}>
-            <strong>{fmt(savedYtd)}</strong> saved so far {target > 0 && <span style={{ color: COLORS.inkSoft }}>of {fmt(target)} goal</span>}
+            <strong>{fmt(savedYtd, 2)}</strong> saved so far {target > 0 && <span style={{ color: COLORS.inkSoft }}>of {fmt(target, 2)} goal</span>}
           </p>
 
           {target > 0 && goal?.targetDate ? (
             <div style={{ background: COLORS.lavender, borderRadius: 10, padding: "10px 12px", marginBottom: 12 }}>
               <p style={{ ...fontBody, fontSize: 12, color: COLORS.primary, fontWeight: 700, margin: "0 0 2px" }}>
-                Suggested this month: {fmt(suggested)}
+                Suggested this month: {fmt(suggested, 2)}
               </p>
               <p style={{ ...fontBody, fontSize: 11, color: COLORS.inkSoft, margin: 0 }}>
-                {fmt(stillNeeded)} still needed ÷ {remainingMonths || 1} month{remainingMonths === 1 ? "" : "s"} remaining
+                {fmt(stillNeeded, 2)} still needed ÷ {remainingMonths || 1} month{remainingMonths === 1 ? "" : "s"} remaining
               </p>
             </div>
           ) : (
@@ -1726,7 +1743,7 @@ function ReservesView({ household, update, selectedMonth, setSelectedMonth }) {
               <Pie data={reserveData} dataKey="value" nameKey="name" innerRadius={45} outerRadius={78} paddingAngle={2}>
                 {reserveData.map((_, i) => <Cell key={i} fill={PALETTE[i % PALETTE.length]} />)}
               </Pie>
-              <Tooltip formatter={(v) => fmt(v)} />
+              <Tooltip formatter={(v) => fmt(v, 2)} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
             </PieChart>
           </ResponsiveContainer>
