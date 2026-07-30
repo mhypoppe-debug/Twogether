@@ -7,7 +7,7 @@ import {
 import {
   Home, Wallet, PiggyBank, Receipt, ChevronRight, ChevronLeft,
   Plus, X, Check, Users, TrendingUp, TrendingDown, Sparkles, Lock,
-  UserPlus, Pencil, GripVertical, Settings as SettingsIcon, CreditCard
+  UserPlus, Pencil, GripVertical, Settings as SettingsIcon, CreditCard, RefreshCw
 } from "lucide-react";
 
 /* ============================================================
@@ -941,6 +941,7 @@ function IncomeView({ household, update, selectedMonth, setSelectedMonth }) {
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
   const [loggedBy, setLoggedBy] = useState(household.partners?.[0] || "");
+  const [chartMode, setChartMode] = useState("month"); // "month" | "ytd"
 
   const addTransaction = () => {
     if (!category || !amount) return;
@@ -994,6 +995,10 @@ function IncomeView({ household, update, selectedMonth, setSelectedMonth }) {
     .sort((a, b) => b.value - a.value);
   const incomeYtd = incomeBreakdown.reduce((a, d) => a + d.value, 0);
 
+  const chartData = chartMode === "ytd" ? incomeBreakdown : monthIncomeData;
+  const chartMax = chartMode === "ytd" ? Math.max(1, ...incomeBreakdown.map(d => d.value)) : monthIncomeMax;
+  const chartTotal = chartMode === "ytd" ? incomeYtd : monthIncomeTotal;
+
   return (
     <div className="page-content" style={{ flex: 1 }}>
       <h1 style={{ ...fontDisplay, fontSize: 30, color: COLORS.ink, margin: "0 0 4px" }}>Income</h1>
@@ -1003,11 +1008,27 @@ function IncomeView({ household, update, selectedMonth, setSelectedMonth }) {
         <KpiCard icon={TrendingUp} label="Income (YTD)" value={incomeYtd} tone={COLORS.primary} breakdown={incomeBreakdown} decimals={2} />
       </div>
 
-      {monthIncomeData.length > 0 && (
+      {(monthIncomeData.length > 0 || incomeBreakdown.length > 0) && (
         <Card style={{ marginBottom: 20, maxWidth: 480 }}>
-          <h3 style={{ ...fontDisplay, fontSize: 17, margin: "0 0 14px", color: COLORS.ink }}>{MONTHS[selectedMonth]}'s income</h3>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, gap: 8 }}>
+            <h3 style={{ ...fontDisplay, fontSize: 17, margin: 0, color: COLORS.ink }}>
+              {chartMode === "ytd" ? "Year to date" : `${MONTHS[selectedMonth]}'s income`}
+              <span style={{ color: COLORS.inkSoft, fontWeight: 400 }}> · {fmt(chartTotal, 2)}</span>
+            </h3>
+            <button
+              onClick={() => setChartMode(m => m === "ytd" ? "month" : "ytd")}
+              title={chartMode === "ytd" ? "Switch to this month" : "Switch to YTD view"}
+              style={{
+                ...fontBody, display: "flex", alignItems: "center", gap: 6, background: COLORS.lavender, color: COLORS.primary,
+                border: "none", borderRadius: 20, padding: "6px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap",
+              }}
+            >
+              <RefreshCw size={13} />
+              {chartMode === "ytd" ? MONTHS[selectedMonth] : "YTD View"}
+            </button>
+          </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {monthIncomeData.map((d, i) => (
+            {chartData.map((d, i) => (
               <div key={d.name}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 3 }}>
                   <span style={{ ...fontBody, fontSize: 12, color: COLORS.ink, display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
@@ -1017,11 +1038,11 @@ function IncomeView({ household, update, selectedMonth, setSelectedMonth }) {
                   </span>
                   <span style={{ ...fontBody, fontSize: 12, flexShrink: 0, paddingLeft: 8 }}>
                     <span style={{ fontWeight: 700, color: COLORS.ink }}>{fmt(d.value, 2)}</span>
-                    <span style={{ color: COLORS.inkSoft }}> · {monthIncomeTotal > 0 ? Math.round((d.value / monthIncomeTotal) * 100) : 0}%</span>
+                    <span style={{ color: COLORS.inkSoft }}> · {chartTotal > 0 ? Math.round((d.value / chartTotal) * 100) : 0}%</span>
                   </span>
                 </div>
                 <div style={{ height: 8, width: "100%", background: COLORS.lavender, borderRadius: 4, overflow: "hidden" }}>
-                  <div style={{ height: "100%", width: `${(d.value / monthIncomeMax) * 100}%`, background: PALETTE[i % PALETTE.length], borderRadius: 4 }} />
+                  <div style={{ height: "100%", width: `${(d.value / chartMax) * 100}%`, background: PALETTE[i % PALETTE.length], borderRadius: 4 }} />
                 </div>
               </div>
             ))}
