@@ -2086,21 +2086,30 @@ function DebtCard({ debt, household, previewSaved = 0, onChange, onDelete }) {
   const paymentOverrides = debt.paymentOverrides || {};
   const feeOverrides = debt.feeOverrides || {};
 
-  // Live preview: while a linked reserve is being saved up (not yet settled), the next
-  // payment's principal is driven live by what's saved so far this period — not manually
-  // editable, since it's meant to always reflect the reserve log. This also means any
-  // stale manual override on period 1 from before it was linked no longer applies.
-  const isPreview = debt.linkedCategory?.type === "reserve";
+  // When linked to a reserve, period 1's principal always follows the reserve — it's
+  // never manually editable, and any stale override from before it was linked no longer
+  // applies. Mid-way through saving up (not yet at the full target for this period), the
+  // schedule still shows the normal planned principal, so it doesn't look like the payoff
+  // shrank just because you're only partway through the period. Only once you've saved
+  // *more* than the full period target does the surplus show up as extra principal —
+  // that's the "I topped up extra this month" case the preview is actually for.
+  const isReserveLinked = debt.linkedCategory?.type === "reserve";
   let scheduleOverrides = paymentOverrides;
-  if (isPreview) {
-    // previewSaved is money saved toward the FULL next payment (principal + interest +
-    // fee — see nextDebtPaymentTotal) — net those out to get the pure principal the
-    // override table expects.
-    const { interest: firstPeriodInterest } = nextDebtPaymentTotal(debt);
-    const firstPeriodFee = Number(feeOverrides[1]) || 0;
-    const previewPrincipal = Math.max(0, previewSaved - firstPeriodInterest - firstPeriodFee);
-    scheduleOverrides = { ...paymentOverrides, 1: previewPrincipal };
+  let previewExtra = 0;
+  if (isReserveLinked) {
+    const rest = { ...paymentOverrides };
+    delete rest[1];
+    const { total: regularTotal, interest: firstPeriodInterest } = nextDebtPaymentTotal(debt);
+    previewExtra = Math.max(0, previewSaved - regularTotal);
+    if (previewExtra > 0) {
+      const regularPrincipal = paymentIncludesInterest
+        ? Math.max(0, (Number(debt.paymentAmount) || 0) - firstPeriodInterest)
+        : Math.max(0, Number(debt.paymentAmount) || 0);
+      rest[1] = regularPrincipal + previewExtra;
+    }
+    scheduleOverrides = rest;
   }
+  const isPreview = isReserveLinked && previewExtra > 0;
 
   const { rows, willNeverPayOff, freq } = buildDebtSchedule(debt.currentAmount, debt.interestRate, debt.paymentFrequency, debt.paymentAmount, paymentIncludesInterest, scheduleOverrides, feeOverrides);
   const monthsPerPeriod = 12 / freq.perYear;
@@ -2313,9 +2322,11 @@ function DebtCard({ debt, household, previewSaved = 0, onChange, onDelete }) {
             </button>
             {scheduleOpen && (
               <div style={{ marginTop: 8 }}>
-                {isPreview && (
+                {isReserveLinked && (
                   <p style={{ ...fontBody, fontSize: 11, color: COLORS.primary, margin: "0 0 6px", fontStyle: "italic" }}>
-                    The first row's principal follows what's saved so far this period ({fmt(previewSaved, 2)}) — a live preview, not editable, nothing's paid yet. Settle the reserve to lock it in.
+                    {isPreview
+                      ? `You've saved ${fmt(previewSaved, 2)} — ${fmt(previewExtra, 2)} more than this period needs, so the first row shows that extra paying down principal early. Settle the reserve to lock it in.`
+                      : "The first row's principal isn't editable here — it follows the linked reserve, and only changes once you've saved more than this period needs."}
                   </p>
                 )}
                 <div style={{ maxHeight: 320, overflowY: "auto" }}>
@@ -2333,6 +2344,7 @@ function DebtCard({ debt, household, previewSaved = 0, onChange, onDelete }) {
                   <tbody>
                     {rows.map(r => {
                       const dateStr = debt.firstPaymentDate ? addMonthsToDateStr(debt.firstPaymentDate, ((debt.paidPeriods || 0) + r.period - 1) * monthsPerPeriod) : null;
+                      const readOnlyRow = isReserveLinked && r.period === 1;
                       const previewRow = isPreview && r.period === 1;
                       return (
                         <tr
@@ -2346,7 +2358,7 @@ function DebtCard({ debt, household, previewSaved = 0, onChange, onDelete }) {
                           <td style={{ padding: "4px 6px", textAlign: "right" }}>{fmt(r.payment)}</td>
                           <td style={{ padding: "4px 6px", textAlign: "right", color: COLORS.alert }}>{fmt(r.interest)}</td>
                           <td style={{ padding: "4px 6px", textAlign: "right" }}>
-                            {previewRow ? (
+                            {readOnlyRow ? (
                               <span style={{ ...fontBody, fontSize: 11, fontWeight: 700, color: COLORS.success }} title="Follows the linked reserve — not editable">
                                 {fmt(r.principal, 2)}
                               </span>
