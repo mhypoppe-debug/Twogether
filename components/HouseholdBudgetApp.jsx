@@ -1399,7 +1399,7 @@ function SettleReserveFlow({ savedYtd, onCancel, onSettle }) {
   );
 }
 
-function ReserveGoalCard({ cat, icon, savedYtd, goal, releasedIdx, monthly, selectedMonth, onGoalChange, onMonthlyChange, onRelease, onSettle, onDelete }) {
+function ReserveGoalCard({ cat, icon, savedYtd, goal, releasedIdx, monthly, selectedMonth, onGoalChange, onRelease, onSettle, onDelete }) {
   const isReleased = releasedIdx !== null && releasedIdx !== undefined;
   const [settling, setSettling] = useState(false);
   const target = Number(goal?.targetAmount) || 0;
@@ -1520,14 +1520,9 @@ function ReserveGoalCard({ cat, icon, savedYtd, goal, releasedIdx, monthly, sele
             </p>
           )}
 
-          <label style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: COLORS.inkSoft, display: "block", marginBottom: 4 }}>
-            What did you actually set aside this month?
-          </label>
-          <input
-            type="number" onFocus={e => e.target.select()} value={monthly}
-            onChange={e => onMonthlyChange(Number(e.target.value))}
-            style={{ ...fontBody, width: "100%", boxSizing: "border-box", padding: "8px 10px", borderRadius: 8, border: `1.5px solid ${COLORS.primary}`, fontSize: 14, outline: "none", marginBottom: 10 }}
-          />
+          <p style={{ ...fontBody, fontSize: 12, color: COLORS.inkSoft, margin: "0 0 12px" }}>
+            {fmt(monthly, 2)} set aside in {MONTHS[selectedMonth]} — log contributions above.
+          </p>
 
           {isReleased ? (
             <button
@@ -1564,6 +1559,12 @@ function ReserveGoalCard({ cat, icon, savedYtd, goal, releasedIdx, monthly, sele
 
 function ReservesView({ household, update, selectedMonth, setSelectedMonth }) {
   const [draggedCat, setDraggedCat] = useState(null);
+  const [category, setCategory] = useState("");
+  const [amount, setAmount] = useState("");
+  const [note, setNote] = useState("");
+  const [loggedBy, setLoggedBy] = useState(household.partners?.[0] || "");
+  const [chartMode, setChartMode] = useState("month"); // "month" | "ytd"
+
   const reorderReserve = (fromCat, toCat) => {
     if (fromCat === toCat) return;
     update(h => {
@@ -1576,12 +1577,36 @@ function ReservesView({ household, update, selectedMonth, setSelectedMonth }) {
       return { ...h, categories: { ...h.categories, reserve: arr } };
     });
   };
-  const setMonthly = (cat, val) => {
+  const addTransaction = () => {
+    if (!category || !amount) return;
     update(h => {
-      const arr = [...(h.actual.reserve[cat] || zeros())];
-      arr[selectedMonth] = val;
-      return { ...h, actual: { ...h.actual, reserve: { ...h.actual.reserve, [cat]: arr } } };
+      const arr = [...(h.actual.reserve[category] || zeros())];
+      arr[selectedMonth] += Number(amount);
+      const tx = {
+        id: Date.now(), month: selectedMonth, type: "reserve", category, amount: Number(amount), note, loggedBy: loggedBy || null,
+        date: new Date().toISOString().slice(0, 10),
+      };
+      return {
+        ...h,
+        actual: { ...h.actual, reserve: { ...h.actual.reserve, [category]: arr } },
+        transactions: [tx, ...h.transactions],
+      };
     });
+    setAmount(""); setNote("");
+  };
+  const deleteTransaction = (tx) => {
+    update(h => {
+      const arr = [...(h.actual.reserve[tx.category] || zeros())];
+      arr[tx.month] = Math.max(0, arr[tx.month] - tx.amount);
+      return {
+        ...h,
+        actual: { ...h.actual, reserve: { ...h.actual.reserve, [tx.category]: arr } },
+        transactions: h.transactions.filter(t => t.id !== tx.id),
+      };
+    });
+  };
+  const updateTransactionDate = (txId, date) => {
+    update(h => ({ ...h, transactions: h.transactions.map(t => t.id === txId ? { ...t, date } : t) }));
   };
   const setGoal = (cat, goal) => {
     update(h => ({ ...h, reserveGoals: { ...h.reserveGoals, [cat]: goal } }));
@@ -1704,9 +1729,25 @@ function ReservesView({ household, update, selectedMonth, setSelectedMonth }) {
   const visibleReserve = visibleCategories(household, "reserve", selectedMonth)
     .filter(cat => !(household.archivedReserves || []).includes(cat));
 
-  const reserveData = visibleReserve
-    .map(c => ({ name: c, value: (household.actual.reserve[c] || zeros())[selectedMonth] }))
-    .filter(d => d.value > 0);
+  const reserveTx = household.transactions.filter(t => t.type === "reserve" && t.month === selectedMonth);
+  const showInitials = household.preferences?.showPartnerInitials && household.partners?.length > 0;
+
+  const monthReserveData = visibleReserve
+    .map(c => ({ name: c, icon: household.categoryIcons?.reserve?.[c], value: (household.actual.reserve[c] || zeros())[selectedMonth] }))
+    .filter(d => d.value > 0)
+    .sort((a, b) => b.value - a.value);
+  const monthReserveMax = Math.max(1, ...monthReserveData.map(d => d.value));
+  const monthReserveTotal = monthReserveData.reduce((a, d) => a + d.value, 0);
+
+  const reserveBreakdown = household.categories.reserve
+    .map(c => ({ name: c, icon: household.categoryIcons?.reserve?.[c], value: (household.actual.reserve[c] || zeros()).slice(0, selectedMonth + 1).reduce((a, b) => a + b, 0) }))
+    .filter(d => d.value > 0)
+    .sort((a, b) => b.value - a.value);
+  const reserveYtd = reserveBreakdown.reduce((a, d) => a + d.value, 0);
+
+  const chartData = chartMode === "ytd" ? reserveBreakdown : monthReserveData;
+  const chartMax = chartMode === "ytd" ? Math.max(1, ...reserveBreakdown.map(d => d.value)) : monthReserveMax;
+  const chartTotal = chartMode === "ytd" ? reserveYtd : monthReserveTotal;
 
   return (
     <div className="page-content" style={{ flex: 1 }}>
@@ -1717,18 +1758,114 @@ function ReservesView({ household, update, selectedMonth, setSelectedMonth }) {
         the goal any time, even mid-year — the months-remaining count just adjusts.
       </p>
 
-      {reserveData.length > 0 && (
-        <Card style={{ marginTop: 16, marginBottom: 4, maxWidth: 420 }}>
-          <h3 style={{ ...fontDisplay, fontSize: 16, margin: "0 0 12px", color: COLORS.ink }}>{MONTHS[selectedMonth]}'s reserves</h3>
-          <ResponsiveContainer width="100%" height={220}>
-            <PieChart>
-              <Pie data={reserveData} dataKey="value" nameKey="name" innerRadius={45} outerRadius={78} paddingAngle={2}>
-                {reserveData.map((_, i) => <Cell key={i} fill={PALETTE[i % PALETTE.length]} />)}
-              </Pie>
-              <Tooltip formatter={(v) => fmt(v, 2)} />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
-            </PieChart>
-          </ResponsiveContainer>
+      {(monthReserveData.length > 0 || reserveBreakdown.length > 0) && (
+        <Card style={{ marginTop: 16, marginBottom: 20, maxWidth: 480 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, gap: 8 }}>
+            <h3 style={{ ...fontDisplay, fontSize: 17, margin: 0, color: COLORS.ink }}>
+              {chartMode === "ytd" ? "Year to date" : `${MONTHS[selectedMonth]}'s reserves`}
+              <span style={{ color: COLORS.inkSoft, fontWeight: 400 }}> · {fmt(chartTotal, 2)}</span>
+            </h3>
+            <button
+              onClick={() => setChartMode(m => m === "ytd" ? "month" : "ytd")}
+              title={chartMode === "ytd" ? "Switch to this month" : "Switch to YTD view"}
+              style={{
+                ...fontBody, display: "flex", alignItems: "center", gap: 6, background: COLORS.lavender, color: COLORS.primary,
+                border: "none", borderRadius: 20, padding: "6px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap",
+              }}
+            >
+              <RefreshCw size={13} />
+              {chartMode === "ytd" ? MONTHS[selectedMonth] : "YTD View"}
+            </button>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {chartData.map((d, i) => (
+              <div key={d.name}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 3 }}>
+                  <span style={{ ...fontBody, fontSize: 12, color: COLORS.ink, display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
+                    <span style={{ width: 9, height: 9, borderRadius: 3, background: PALETTE[i % PALETTE.length], flexShrink: 0 }} />
+                    {d.icon && <span>{d.icon}</span>}
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</span>
+                  </span>
+                  <span style={{ ...fontBody, fontSize: 12, flexShrink: 0, paddingLeft: 8 }}>
+                    <span style={{ fontWeight: 700, color: COLORS.ink }}>{fmt(d.value, 2)}</span>
+                    <span style={{ color: COLORS.inkSoft }}> · {chartTotal > 0 ? Math.round((d.value / chartTotal) * 100) : 0}%</span>
+                  </span>
+                </div>
+                <div style={{ height: 8, width: "100%", background: COLORS.lavender, borderRadius: 4, overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${(d.value / chartMax) * 100}%`, background: PALETTE[i % PALETTE.length], borderRadius: 4 }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      <Card style={{ marginBottom: 20 }}>
+        <h3 style={{ ...fontDisplay, fontSize: 17, margin: "0 0 14px", color: COLORS.ink }}>Log a contribution</h3>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: household.partners?.length > 0 ? 10 : 0 }}>
+          <select value={category} onChange={e => setCategory(e.target.value)} style={{ ...fontBody, padding: "10px 12px", borderRadius: 8, border: `1.5px solid ${COLORS.border}`, fontSize: 14, minWidth: 180 }}>
+            <option value="">Select reserve…</option>
+            {visibleReserve.map(c => (
+              <option key={c} value={c}>{household.categoryIcons?.reserve?.[c] ? `${household.categoryIcons.reserve[c]} ${c}` : c}</option>
+            ))}
+          </select>
+          <input type="number" onFocus={e => e.target.select()} onKeyDown={e => e.key === "Enter" && addTransaction()} placeholder={`Amount (${CURRENCY_SYMBOL})`} value={amount} onChange={e => setAmount(e.target.value)} style={{ ...fontBody, padding: "10px 12px", borderRadius: 8, border: `1.5px solid ${COLORS.border}`, fontSize: 14, width: 130 }} />
+          <input placeholder="Note (optional)" onKeyDown={e => e.key === "Enter" && addTransaction()} value={note} onChange={e => setNote(e.target.value)} style={{ ...fontBody, padding: "10px 12px", borderRadius: 8, border: `1.5px solid ${COLORS.border}`, fontSize: 14, flex: 1, minWidth: 160 }} />
+          <button onClick={addTransaction} style={{ ...fontBody, background: COLORS.primary, color: "#fff", border: "none", borderRadius: 8, padding: "0 18px", fontWeight: 700, cursor: "pointer" }}>Add</button>
+        </div>
+        {household.partners?.length > 0 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ ...fontBody, fontSize: 12, color: COLORS.inkSoft, fontWeight: 600 }}>Logged by:</span>
+            {household.partners.map(p => (
+              <Chip key={p} active={loggedBy === p} onClick={() => setLoggedBy(p)}>{p}</Chip>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      {reserveTx.length > 0 && (
+        <Card style={{ marginBottom: 20 }}>
+          <h3 style={{ ...fontDisplay, fontSize: 16, margin: "0 0 12px", color: COLORS.ink }}>{MONTHS[selectedMonth]} contributions</h3>
+          <div>
+            {reserveTx.slice(0, 15).map(tx => (
+              <div key={tx.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: `1px solid ${COLORS.border}`, ...fontBody, fontSize: 13 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  {showInitials && tx.loggedBy && (
+                    <span style={{
+                      display: "inline-flex", alignItems: "center", justifyContent: "center", width: 22, height: 22,
+                      borderRadius: "50%", background: COLORS.lavender, color: COLORS.primary, fontSize: 10, fontWeight: 800,
+                    }} title={tx.loggedBy}>
+                      {initialsOf(tx.loggedBy)}
+                    </span>
+                  )}
+                  <div>
+                    {household.categoryIcons?.reserve?.[tx.category] && <span style={{ marginRight: 4 }}>{household.categoryIcons.reserve[tx.category]}</span>}
+                    <span style={{ fontWeight: 600 }}>{tx.category}</span>
+                    {tx.note && <span style={{ color: COLORS.inkSoft }}> · {tx.note}</span>}
+                    <div>
+                      <input
+                        type="date" value={tx.date || ""} onChange={e => updateTransactionDate(tx.id, e.target.value)}
+                        style={{
+                          ...fontBody, fontSize: 11, color: COLORS.inkSoft, background: "none", border: "none", padding: 0,
+                          outline: "none", cursor: "pointer", marginTop: 2,
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontWeight: 700, color: COLORS.primary }}>+{fmt(tx.amount, 2)}</span>
+                  <button
+                    onClick={() => deleteTransaction(tx)}
+                    title="Delete this entry"
+                    style={{ background: "none", border: "none", cursor: "pointer", color: COLORS.inkSoft, display: "flex", padding: 2 }}
+                  >
+                    <X size={15} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
         </Card>
       )}
 
@@ -1762,7 +1899,6 @@ function ReservesView({ household, update, selectedMonth, setSelectedMonth }) {
                       monthly={arr[selectedMonth]}
                       selectedMonth={selectedMonth}
                       onGoalChange={(g) => setGoal(cat, g)}
-                      onMonthlyChange={(v) => setMonthly(cat, v)}
                       onRelease={() => toggleRelease(cat)}
                       onSettle={(payload) => settleReserve(cat, payload)}
                       onDelete={() => deleteReserve(cat)}
