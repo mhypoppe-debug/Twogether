@@ -844,7 +844,7 @@ function Dashboard({ household, selectedMonth, setSelectedMonth }) {
         display = "—";
       } else if (d.firstPaymentDate) {
         const monthsPerPeriod = 12 / freq.perYear;
-        display = formatDate(addMonthsToDateStr(d.firstPaymentDate, (rows.length - 1) * monthsPerPeriod));
+        display = formatDate(addMonthsToDateStr(d.firstPaymentDate, ((d.paidPeriods || 0) + rows.length - 1) * monthsPerPeriod));
       } else {
         display = `${rows.length} payments left`;
       }
@@ -1148,10 +1148,14 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
         id: Date.now(), month: selectedMonth, type: "expense", category, amount: Number(amount), note, loggedBy: loggedBy || null,
         date: new Date().toISOString().slice(0, 10),
       };
+      // Logging an expense in a category linked to a debt IS that period's payment —
+      // pay it down automatically instead of requiring a separate settle step.
+      const debts = payDownLinkedDebt(h, "expense", category, Number(amount));
       return {
         ...h,
         actual: { ...h.actual, expense: { ...h.actual.expense, [category]: arr } },
         transactions: [tx, ...h.transactions],
+        debts,
       };
     });
     setAmount(""); setNote("");
@@ -1399,7 +1403,7 @@ function SettleReserveFlow({ savedYtd, onCancel, onSettle }) {
   );
 }
 
-function ReserveGoalCard({ cat, icon, savedYtd, goal, releasedIdx, monthly, selectedMonth, onGoalChange, onRelease, onSettle, onDelete }) {
+function ReserveGoalCard({ cat, icon, savedYtd, goal, releasedIdx, monthly, selectedMonth, linkedDebt, onGoalChange, onRelease, onSettle, onDelete }) {
   const isReleased = releasedIdx !== null && releasedIdx !== undefined;
   const [settling, setSettling] = useState(false);
   const target = Number(goal?.targetAmount) || 0;
@@ -1408,7 +1412,12 @@ function ReserveGoalCard({ cat, icon, savedYtd, goal, releasedIdx, monthly, sele
   // entry doesn't get counted twice (once as "saved", once as still "remaining").
   const savedBeforeThisMonth = savedYtd - monthly;
   const stillNeeded = Math.max(0, target - savedBeforeThisMonth);
-  const suggested = target > 0 && remainingMonths !== null ? stillNeeded / remainingMonths : null;
+  const linkedFreq = linkedDebt ? (DEBT_FREQUENCIES.find(f => f.key === linkedDebt.paymentFrequency) || DEBT_FREQUENCIES[0]) : null;
+  // Linked to a debt: the suggestion is a fixed slice of the debt's payment, not
+  // recalculated from what's still needed — an extra top-up one month shouldn't lower
+  // next month's suggestion, since the payment itself doesn't get any smaller.
+  const linkedSuggested = linkedDebt ? (Number(linkedDebt.paymentAmount) || 0) / (12 / linkedFreq.perYear) : null;
+  const suggested = linkedDebt ? linkedSuggested : (target > 0 && remainingMonths !== null ? stillNeeded / remainingMonths : null);
   const pct = target > 0 ? Math.min(100, (savedYtd / target) * 100) : 0;
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [goalOpen, setGoalOpen] = useState(false);
@@ -1451,7 +1460,17 @@ function ReserveGoalCard({ cat, icon, savedYtd, goal, releasedIdx, monthly, sele
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        {/* goal setup, collapsed by default */}
+        {linkedDebt ? (
+          <div style={{ background: COLORS.lavender, borderRadius: 10, padding: "10px 12px" }}>
+            <p style={{ ...fontBody, fontSize: 12, color: COLORS.primary, fontWeight: 700, margin: "0 0 2px" }}>
+              Linked to debt: {linkedDebt.icon ? `${linkedDebt.icon} ` : ""}{linkedDebt.name}
+            </p>
+            <p style={{ ...fontBody, fontSize: 11, color: COLORS.inkSoft, margin: 0 }}>
+              Saving toward {fmt(linkedDebt.paymentAmount || 0, 2)} due every {linkedFreq.label.toLowerCase()}
+            </p>
+          </div>
+        ) : (
+        /* goal setup, collapsed by default */
         <div>
           <button
             onClick={() => setGoalOpen(o => !o)}
@@ -1495,6 +1514,7 @@ function ReserveGoalCard({ cat, icon, savedYtd, goal, releasedIdx, monthly, sele
             </>
           )}
         </div>
+        )}
 
         {/* progress + this month's input */}
         <div>
@@ -1505,7 +1525,16 @@ function ReserveGoalCard({ cat, icon, savedYtd, goal, releasedIdx, monthly, sele
             <strong>{fmt(savedYtd, 2)}</strong> saved so far {target > 0 && <span style={{ color: COLORS.inkSoft }}>of {fmt(target, 2)} goal</span>}
           </p>
 
-          {target > 0 && goal?.targetDate ? (
+          {linkedDebt ? (
+            <div style={{ background: COLORS.lavender, borderRadius: 10, padding: "10px 12px", marginBottom: 12 }}>
+              <p style={{ ...fontBody, fontSize: 12, color: COLORS.primary, fontWeight: 700, margin: "0 0 2px" }}>
+                Suggested this month: {fmt(suggested, 2)}
+              </p>
+              <p style={{ ...fontBody, fontSize: 11, color: COLORS.inkSoft, margin: 0 }}>
+                Fixed amount: {fmt(linkedDebt.paymentAmount || 0, 2)} ÷ {12 / linkedFreq.perYear} month{(12 / linkedFreq.perYear) === 1 ? "" : "s"} per {linkedFreq.label.toLowerCase()} payment
+              </p>
+            </div>
+          ) : target > 0 && goal?.targetDate ? (
             <div style={{ background: COLORS.lavender, borderRadius: 10, padding: "10px 12px", marginBottom: 12 }}>
               <p style={{ ...fontBody, fontSize: 12, color: COLORS.primary, fontWeight: 700, margin: "0 0 2px" }}>
                 Suggested this month: {fmt(suggested, 2)}
@@ -1675,6 +1704,10 @@ function ReservesView({ household, update, selectedMonth, setSelectedMonth }) {
         ? [...new Set([...(h.archivedReserves || []), cat])]
         : (h.archivedReserves || []).filter(c => c !== cat);
 
+      // If this reserve is saving up for a debt payment, settling it means the real-world
+      // payment just happened — knock it off the debt and advance the schedule.
+      const debts = reopening ? h.debts : payDownLinkedDebt(h, "reserve", cat, paidAmount);
+
       return {
         ...h,
         actual: {
@@ -1694,6 +1727,7 @@ function ReservesView({ household, update, selectedMonth, setSelectedMonth }) {
         reserveGoals: reopening
           ? { ...h.reserveGoals, [cat]: { targetAmount: 0, targetDate: "" } }
           : h.reserveGoals,
+        debts,
       };
     });
   };
@@ -1898,6 +1932,7 @@ function ReservesView({ household, update, selectedMonth, setSelectedMonth }) {
                       releasedIdx={household.releasedThrough[cat]}
                       monthly={arr[selectedMonth]}
                       selectedMonth={selectedMonth}
+                      linkedDebt={(household.debts || []).find(d => d.linkedCategory?.type === "reserve" && d.linkedCategory?.name === cat) || null}
                       onGoalChange={(g) => setGoal(cat, g)}
                       onRelease={() => toggleRelease(cat)}
                       onSettle={(payload) => settleReserve(cat, payload)}
@@ -1984,7 +2019,50 @@ function addMonthsToDateStr(dateStr, months) {
   return d.toISOString().slice(0, 10);
 }
 
-function DebtCard({ debt, onChange, onDelete }) {
+// Applies one real-world payment to whichever debt is linked to this category (if any),
+// treating `paidAmount` as covering the next upcoming period. Knocks the principal portion
+// off currentAmount, advances paidPeriods (so schedule dates keep counting forward instead
+// of resetting to the first-payment date), and shifts any period-specific overrides down by
+// one so they stay lined up with the period they were actually meant for.
+function payDownLinkedDebt(h, catType, catName, paidAmount) {
+  const debts = h.debts || [];
+  const idx = debts.findIndex(d => d.linkedCategory?.type === catType && d.linkedCategory?.name === catName);
+  if (idx === -1) return debts;
+  const debt = debts[idx];
+  const paymentIncludesInterest = debt.paymentIncludesInterest ?? true;
+  const paymentOverrides = debt.paymentOverrides || {};
+  const feeOverrides = debt.feeOverrides || {};
+  const { rows } = buildDebtSchedule(debt.currentAmount, debt.interestRate, debt.paymentFrequency, debt.paymentAmount, paymentIncludesInterest, paymentOverrides, feeOverrides);
+  if (rows.length === 0) return debts;
+
+  const balance = Number(debt.currentAmount) || 0;
+  const nextInterest = rows[0].interest;
+  const principal = paymentIncludesInterest
+    ? Math.min(Math.max(0, paidAmount - nextInterest), balance)
+    : Math.min(Math.max(0, paidAmount), balance);
+
+  const shiftDown = (map) => {
+    const out = {};
+    Object.entries(map).forEach(([k, v]) => {
+      const period = Number(k);
+      if (period > 1) out[period - 1] = v;
+    });
+    return out;
+  };
+
+  const updated = {
+    ...debt,
+    currentAmount: Math.max(0, balance - principal),
+    paidPeriods: (debt.paidPeriods || 0) + 1,
+    paymentOverrides: shiftDown(paymentOverrides),
+    feeOverrides: shiftDown(feeOverrides),
+  };
+  const next = [...debts];
+  next[idx] = updated;
+  return next;
+}
+
+function DebtCard({ debt, household, onChange, onDelete }) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(true);
@@ -2121,6 +2199,46 @@ function DebtCard({ debt, onChange, onDelete }) {
                   ))}
                 </div>
               </div>
+
+              <div>
+                <label style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: COLORS.inkSoft, display: "block", marginBottom: 4 }}>
+                  Link to a category (optional)
+                </label>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: debt.linkedCategory ? 8 : 0 }}>
+                  <Chip active={!debt.linkedCategory} onClick={() => onChange({ ...debt, linkedCategory: null })}>None</Chip>
+                  <Chip
+                    active={debt.linkedCategory?.type === "reserve"}
+                    onClick={() => onChange({ ...debt, linkedCategory: { type: "reserve", name: household?.categories?.reserve?.[0] || "" } })}
+                  >
+                    Reserve — save up first
+                  </Chip>
+                  <Chip
+                    active={debt.linkedCategory?.type === "expense"}
+                    onClick={() => onChange({ ...debt, linkedCategory: { type: "expense", name: household?.categories?.expense?.[0] || "" } })}
+                  >
+                    Expense — pay directly
+                  </Chip>
+                </div>
+                {debt.linkedCategory && (
+                  <>
+                    <select
+                      value={debt.linkedCategory.name}
+                      onChange={e => onChange({ ...debt, linkedCategory: { ...debt.linkedCategory, name: e.target.value } })}
+                      style={{ ...fontBody, width: "100%", boxSizing: "border-box", padding: "8px 10px", borderRadius: 8, border: `1.5px solid ${COLORS.border}`, fontSize: 13, outline: "none", marginBottom: 6 }}
+                    >
+                      <option value="">Select category…</option>
+                      {((debt.linkedCategory.type === "reserve" ? household?.categories?.reserve : household?.categories?.expense) || []).map(c => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                    <p style={{ ...fontBody, fontSize: 11, color: COLORS.inkSoft, margin: 0 }}>
+                      {debt.linkedCategory.type === "reserve"
+                        ? `The suggested monthly amount for that reserve becomes a fixed ${fmt((Number(debt.paymentAmount) || 0) / monthsPerPeriod, 2)}/month — settling it pays down ${debt.name} automatically.`
+                        : `Logging an expense in "${debt.linkedCategory.name || "…"}" pays down ${debt.name} automatically, as that period's payment.`}
+                    </p>
+                  </>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -2175,7 +2293,7 @@ function DebtCard({ debt, onChange, onDelete }) {
                   </thead>
                   <tbody>
                     {rows.map(r => {
-                      const dateStr = debt.firstPaymentDate ? addMonthsToDateStr(debt.firstPaymentDate, (r.period - 1) * monthsPerPeriod) : null;
+                      const dateStr = debt.firstPaymentDate ? addMonthsToDateStr(debt.firstPaymentDate, ((debt.paidPeriods || 0) + r.period - 1) * monthsPerPeriod) : null;
                       return (
                         <tr key={r.period} style={{ borderTop: `1px solid ${COLORS.border}`, background: r.overridden ? COLORS.lavender : "transparent" }}>
                           {debt.firstPaymentDate && <td style={{ padding: "4px 6px", whiteSpace: "nowrap" }}>{formatDate(dateStr)}</td>}
@@ -2233,7 +2351,7 @@ function DebtView({ household, update }) {
       debts: [...(h.debts || []), {
         id: `${Date.now()}-${trimmed}`, name: trimmed, icon: ic || null,
         currentAmount: 0, interestRate: 0, paymentFrequency: "monthly", paymentAmount: 0, paymentIncludesInterest: true,
-        firstPaymentDate: "", paymentOverrides: {}, feeOverrides: {},
+        firstPaymentDate: "", paymentOverrides: {}, feeOverrides: {}, linkedCategory: null, paidPeriods: 0,
       }],
     }));
   };
@@ -2267,7 +2385,7 @@ function DebtView({ household, update }) {
       ) : (
         <div className="debt-grid" style={{ marginTop: 20 }}>
           {debts.map(d => (
-            <DebtCard key={d.id} debt={d} onChange={(next) => updateDebt(d.id, next)} onDelete={() => deleteDebt(d.id)} />
+            <DebtCard key={d.id} debt={d} household={household} onChange={(next) => updateDebt(d.id, next)} onDelete={() => deleteDebt(d.id)} />
           ))}
         </div>
       )}
@@ -2756,7 +2874,10 @@ function normalizeHousehold(h) {
     releasedAmount: h.releasedAmount || {},
     archivedReserves: h.archivedReserves || [],
     reserveGoals: h.reserveGoals || {},
-    debts: h.debts || [],
+    debts: (h.debts || []).map(d => ({
+      paymentOverrides: {}, feeOverrides: {}, linkedCategory: null, paidPeriods: 0,
+      ...d,
+    })),
     sameEveryMonth: { ...empty.sameEveryMonth, ...(h.sameEveryMonth || {}) },
     copyActualFromExpected: { ...empty.copyActualFromExpected, ...(h.copyActualFromExpected || {}) },
     preferences: { ...empty.preferences, ...(h.preferences || {}) },
