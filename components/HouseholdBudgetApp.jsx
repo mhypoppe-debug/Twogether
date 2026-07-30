@@ -797,78 +797,50 @@ function StatusOverview({ household, selectedMonth }) {
     : 0;
   const incomeWin = priorIncomeAvg > 0 && incomeThisMonth > priorIncomeAvg * 1.1;
 
-  // Pick the single most exciting thing to headline, most specific/exciting first.
-  let headline;
+  // Pick the single most exciting thing to headline, most specific/exciting first —
+  // always naming the amount, not just that something good happened.
+  let positive = null;
   if (debtWins.length > 0) {
     const best = debtWins.sort((a, b) => b.extra - a.extra)[0];
-    headline = `Paying down ${best.icon ? `${best.icon} ` : ""}${best.name} extra this month — nice! 💪`;
+    positive = `Paying down ${best.icon ? `${best.icon} ` : ""}${best.name} an extra ${fmt(best.extra, 2)} this month — nice! 💪`;
   } else if (goalsReached.length > 0) {
     const g = goalsReached[0];
-    headline = `You hit your ${g.icon ? `${g.icon} ` : ""}${g.cat} goal this month! 🎉`;
+    const target = Number(household.reserveGoals?.[g.cat]?.targetAmount) || 0;
+    positive = `You hit your ${g.icon ? `${g.icon} ` : ""}${g.cat} goal — ${fmt(target, 2)} saved! 🎉`;
   } else if (reserveStatus.some(r => r.extra > 0)) {
     const best = reserveStatus.filter(r => r.extra > 0).sort((a, b) => b.extra - a.extra)[0];
-    headline = `Extra saved for ${best.icon ? `${best.icon} ` : ""}${best.cat} this month!`;
+    positive = `Extra ${fmt(best.extra, 2)} saved for ${best.icon ? `${best.icon} ` : ""}${best.cat} this month!`;
   } else if (incomeWin) {
-    headline = "A stronger income month than usual — nice going!";
+    positive = `Income up this month — ${fmt(incomeThisMonth, 2)} vs your usual ${fmt(priorIncomeAvg, 2)}.`;
   } else {
-    headline = "Steady as she goes this month.";
+    positive = "Steady as she goes this month.";
   }
 
-  // Next payment coming up for each debt with a first-payment date, soonest first.
-  const upcomingDebts = (household.debts || [])
-    .filter(d => d.firstPaymentDate && (Number(d.currentAmount) || 0) > 0)
-    .map(d => {
-      const payment = nextDebtPaymentTotal(d);
-      const dueDate = addMonthsToDateStr(d.firstPaymentDate, (d.paidPeriods || 0) * payment.monthsPerPeriod);
-      return { name: d.name, icon: d.icon, dueDate, amount: payment.total };
-    })
-    .filter(d => d.dueDate)
-    .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+  // Flag whichever expense category is running well above its own recent average —
+  // a simple "watch out" signal, not a judgement on any particular category.
+  let warning = null;
+  if (selectedMonth > 0) {
+    const spikes = household.categories.expense.map(cat => {
+      const arr = household.actual.expense[cat] || zeros();
+      const thisMonth = arr[selectedMonth] || 0;
+      const avg = arr.slice(0, selectedMonth).reduce((a, b) => a + b, 0) / selectedMonth;
+      const overshoot = thisMonth - avg;
+      return avg > 0 && thisMonth > avg * 1.5 && overshoot > 20
+        ? { cat, icon: household.categoryIcons?.expense?.[cat], thisMonth, avg, overshoot }
+        : null;
+    }).filter(Boolean).sort((a, b) => b.overshoot - a.overshoot);
+    if (spikes.length > 0) {
+      const s = spikes[0];
+      warning = `${s.icon ? `${s.icon} ` : ""}${s.cat} is running high this month — ${fmt(s.thisMonth, 2)} vs your usual ${fmt(s.avg, 2)}. Keep an eye on it.`;
+    }
+  }
 
   return (
     <Card>
-      <h3 style={{ ...fontDisplay, fontSize: 16, margin: "0 0 4px", color: COLORS.ink }}>How you're doing</h3>
-      <p style={{ ...fontBody, fontSize: 14, color: COLORS.primary, fontWeight: 700, margin: "0 0 14px" }}>{headline}</p>
-
-      {reserveStatus.length > 0 && (
-        <div style={{ marginBottom: upcomingDebts.length > 0 ? 14 : 0 }}>
-          <p style={{ ...fontBody, fontSize: 11, fontWeight: 700, color: COLORS.inkSoft, margin: "0 0 6px", textTransform: "uppercase", letterSpacing: 0.4 }}>Reserves</p>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {reserveStatus.map(r => (
-              <div key={r.cat} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, ...fontBody, fontSize: 13 }}>
-                <span style={{ display: "flex", alignItems: "center", gap: 6, color: COLORS.ink, minWidth: 0 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: "50%", flexShrink: 0, background: r.onTrack ? COLORS.success : COLORS.gold }} />
-                  {r.icon && <span>{r.icon}</span>}
-                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.cat}</span>
-                </span>
-                <span style={{ color: COLORS.inkSoft, flexShrink: 0 }}>{fmt(r.thisMonth, 2)} of {fmt(r.suggested, 2)}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {upcomingDebts.length > 0 && (
-        <div>
-          <p style={{ ...fontBody, fontSize: 11, fontWeight: 700, color: COLORS.inkSoft, margin: "0 0 6px", textTransform: "uppercase", letterSpacing: 0.4 }}>Next debt payments</p>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {upcomingDebts.map(d => (
-              <div key={d.name} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, ...fontBody, fontSize: 13 }}>
-                <span style={{ display: "flex", alignItems: "center", gap: 6, color: COLORS.ink, minWidth: 0 }}>
-                  {d.icon && <span>{d.icon}</span>}
-                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</span>
-                </span>
-                <span style={{ color: COLORS.inkSoft, flexShrink: 0 }}>{formatDate(d.dueDate)} · {fmt(d.amount, 2)}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {reserveStatus.length === 0 && upcomingDebts.length === 0 && (
-        <p style={{ ...fontBody, fontSize: 13, color: COLORS.inkSoft, margin: 0 }}>
-          Set a reserve goal or link a debt to see how you're tracking here.
-        </p>
+      <h3 style={{ ...fontDisplay, fontSize: 16, margin: "0 0 10px", color: COLORS.ink }}>How you're doing</h3>
+      <p style={{ ...fontBody, fontSize: 14, color: COLORS.primary, fontWeight: 700, margin: warning ? "0 0 6px" : 0 }}>{positive}</p>
+      {warning && (
+        <p style={{ ...fontBody, fontSize: 13, color: COLORS.alert, fontWeight: 600, margin: 0 }}>⚠ {warning}</p>
       )}
     </Card>
   );
