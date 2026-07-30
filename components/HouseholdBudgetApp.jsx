@@ -2475,6 +2475,11 @@ function DebtView({ household, update, selectedMonth }) {
   };
 
   const totalDebt = debts.reduce((a, d) => a + (Number(d.currentAmount) || 0), 0);
+  const debtBreakdown = debts
+    .map(d => ({ name: d.name, icon: d.icon, value: Number(d.currentAmount) || 0 }))
+    .filter(d => d.value > 0)
+    .sort((a, b) => b.value - a.value);
+  const debtMax = Math.max(1, ...debtBreakdown.map(d => d.value));
 
   return (
     <div className="page-content" style={{ flex: 1 }}>
@@ -2484,10 +2489,33 @@ function DebtView({ household, update, selectedMonth }) {
         (the usual way loans, mortgages, and credit cards quote them) — pick how often you actually pay below.
       </p>
 
-      {debts.length > 0 && (
-        <div className="kpi-row" style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 20, marginTop: 16 }}>
-          <KpiCard icon={CreditCard} label="Total debt" value={totalDebt} tone={COLORS.alert} />
-        </div>
+      {debtBreakdown.length > 0 && (
+        <Card style={{ marginTop: 16, marginBottom: 20, maxWidth: 480 }}>
+          <h3 style={{ ...fontDisplay, fontSize: 17, margin: "0 0 14px", color: COLORS.ink }}>
+            Total debt
+            <span style={{ color: COLORS.inkSoft, fontWeight: 400 }}> · {fmt(totalDebt)}</span>
+          </h3>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {debtBreakdown.map((d, i) => (
+              <div key={d.name}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 3 }}>
+                  <span style={{ ...fontBody, fontSize: 12, color: COLORS.ink, display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
+                    <span style={{ width: 9, height: 9, borderRadius: 3, background: PALETTE[i % PALETTE.length], flexShrink: 0 }} />
+                    {d.icon && <span>{d.icon}</span>}
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</span>
+                  </span>
+                  <span style={{ ...fontBody, fontSize: 12, flexShrink: 0, paddingLeft: 8 }}>
+                    <span style={{ fontWeight: 700, color: COLORS.ink }}>{fmt(d.value)}</span>
+                    <span style={{ color: COLORS.inkSoft }}> · {totalDebt > 0 ? Math.round((d.value / totalDebt) * 100) : 0}%</span>
+                  </span>
+                </div>
+                <div style={{ height: 8, width: "100%", background: COLORS.lavender, borderRadius: 4, overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${(d.value / debtMax) * 100}%`, background: PALETTE[i % PALETTE.length], borderRadius: 4 }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
       )}
 
       {debts.length === 0 ? (
