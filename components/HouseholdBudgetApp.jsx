@@ -714,7 +714,7 @@ function MonthSwitcher({ selectedMonth, setSelectedMonth }) {
           outline: "none", cursor: "pointer", padding: "2px 4px",
         }}
       >
-        {MONTHS.map((m, i) => <option key={m} value={i}>{m} 2026</option>)}
+        {MONTHS.map((m, i) => <option key={m} value={i}>{m} {new Date().getFullYear()}</option>)}
       </select>
       <button
         onClick={() => setSelectedMonth(m => Math.min(11, m + 1))}
