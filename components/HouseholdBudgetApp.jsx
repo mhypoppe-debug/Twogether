@@ -2086,11 +2086,11 @@ function DebtCard({ debt, household, previewSaved = 0, onChange, onDelete }) {
   const paymentOverrides = debt.paymentOverrides || {};
   const feeOverrides = debt.feeOverrides || {};
 
-  // Live preview: while a linked reserve is still just being saved up (not yet settled),
-  // show what's been saved so far this period as a tentative principal for the next
-  // payment, so the schedule visibly reacts to extra contributions. Nothing is written to
-  // paymentOverrides until the user actually edits it or the reserve gets settled for real.
-  const isPreview = debt.linkedCategory?.type === "reserve" && previewSaved > 0 && paymentOverrides[1] == null;
+  // Live preview: while a linked reserve is being saved up (not yet settled), the next
+  // payment's principal is driven live by what's saved so far this period — not manually
+  // editable, since it's meant to always reflect the reserve log. This also means any
+  // stale manual override on period 1 from before it was linked no longer applies.
+  const isPreview = debt.linkedCategory?.type === "reserve";
   let scheduleOverrides = paymentOverrides;
   if (isPreview) {
     // previewSaved is money saved toward the FULL next payment (principal + interest +
@@ -2315,7 +2315,7 @@ function DebtCard({ debt, household, previewSaved = 0, onChange, onDelete }) {
               <div style={{ marginTop: 8 }}>
                 {isPreview && (
                   <p style={{ ...fontBody, fontSize: 11, color: COLORS.primary, margin: "0 0 6px", fontStyle: "italic" }}>
-                    The first row shows {fmt(previewSaved, 2)} saved so far this period — a preview, nothing's paid yet. Settle the reserve to lock it in.
+                    The first row's principal follows what's saved so far this period ({fmt(previewSaved, 2)}) — a live preview, not editable, nothing's paid yet. Settle the reserve to lock it in.
                   </p>
                 )}
                 <div style={{ maxHeight: 320, overflowY: "auto" }}>
@@ -2346,15 +2346,21 @@ function DebtCard({ debt, household, previewSaved = 0, onChange, onDelete }) {
                           <td style={{ padding: "4px 6px", textAlign: "right" }}>{fmt(r.payment)}</td>
                           <td style={{ padding: "4px 6px", textAlign: "right", color: COLORS.alert }}>{fmt(r.interest)}</td>
                           <td style={{ padding: "4px 6px", textAlign: "right" }}>
-                            <input
-                              type="number" onFocus={e => e.target.select()}
-                              value={Math.round(r.principal * 100) / 100}
-                              onChange={e => setOverride(r.period, Number(e.target.value))}
-                              style={{
-                                ...fontBody, width: 66, textAlign: "right", padding: "3px 5px", borderRadius: 5, fontSize: 11, outline: "none",
-                                border: `1.5px solid ${r.overridden ? COLORS.primary : COLORS.border}`, background: "#fff", color: COLORS.success,
-                              }}
-                            />
+                            {previewRow ? (
+                              <span style={{ ...fontBody, fontSize: 11, fontWeight: 700, color: COLORS.success }} title="Follows the linked reserve — not editable">
+                                {fmt(r.principal, 2)}
+                              </span>
+                            ) : (
+                              <input
+                                type="number" onFocus={e => e.target.select()}
+                                value={Math.round(r.principal * 100) / 100}
+                                onChange={e => setOverride(r.period, Number(e.target.value))}
+                                style={{
+                                  ...fontBody, width: 66, textAlign: "right", padding: "3px 5px", borderRadius: 5, fontSize: 11, outline: "none",
+                                  border: `1.5px solid ${r.overridden ? COLORS.primary : COLORS.border}`, background: "#fff", color: COLORS.success,
+                                }}
+                              />
+                            )}
                           </td>
                           <td style={{ padding: "4px 6px", textAlign: "right" }}>
                             <input
