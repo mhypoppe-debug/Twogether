@@ -731,69 +731,145 @@ function MonthSwitcher({ selectedMonth, setSelectedMonth }) {
   );
 }
 
-function YearOverview({ household, selectedMonth }) {
-  const rows = MONTHS.map((m, i) => {
-    const inc = sumMonth(household.actual.income, i);
-    // Money set aside into reserves is money that's no longer free to spend, even
-    // though it hasn't left the account yet — so it counts toward "expenses" here too.
-    const reserved = sumMonth(household.actual.reserve, i);
-    const exp = sumMonth(household.actual.expense, i) + reserved;
-    return { month: m, income: inc, expenses: exp, reserved, net: inc - exp, isFuture: i > selectedMonth, isSelected: i === selectedMonth };
-  });
+// A reserve category's suggested monthly amount, computed the same way ReserveGoalCard
+// does — either a fixed slice of a linked debt's next payment, or (for a plain goal)
+// what's still needed divided by the months left. Returns null if there's nothing to
+// compare against (no goal, no link).
+function reserveMonthlySuggestion(household, cat, selectedMonth) {
+  const linkedDebt = (household.debts || []).find(d => d.linkedCategory?.type === "reserve" && d.linkedCategory?.name === cat);
+  if (linkedDebt) {
+    const payment = nextDebtPaymentTotal(linkedDebt);
+    return { suggested: payment.total / payment.monthsPerPeriod, linkedDebt };
+  }
+  const goal = household.reserveGoals?.[cat];
+  const target = Number(goal?.targetAmount) || 0;
+  const remainingMonths = monthsRemainingInclusive(goal?.targetDate, selectedMonth);
+  if (target > 0 && remainingMonths !== null) {
+    const arr = household.actual.reserve[cat] || zeros();
+    const savedYtd = arr.slice(0, selectedMonth + 1).reduce((a, b) => a + b, 0);
+    const savedBefore = savedYtd - (arr[selectedMonth] || 0);
+    return { suggested: Math.max(0, target - savedBefore) / remainingMonths, linkedDebt: null };
+  }
+  return null;
+}
+
+function StatusOverview({ household, selectedMonth }) {
+  const visibleReserve = (household.categories.reserve || []).filter(cat => !(household.archivedReserves || []).includes(cat));
+
+  const reserveStatus = visibleReserve.map(cat => {
+    const arr = household.actual.reserve[cat] || zeros();
+    const thisMonth = arr[selectedMonth] || 0;
+    const info = reserveMonthlySuggestion(household, cat, selectedMonth);
+    if (!info) return null;
+    return {
+      cat, icon: household.categoryIcons?.reserve?.[cat], thisMonth,
+      suggested: info.suggested, extra: thisMonth - info.suggested,
+      onTrack: thisMonth >= info.suggested - 0.01, linkedDebtName: info.linkedDebt?.name || null,
+    };
+  }).filter(Boolean);
+
+  // Reserve goals (not debt-linked ones — those don't really "finish") crossed this month.
+  const goalsReached = visibleReserve.map(cat => {
+    const target = Number(household.reserveGoals?.[cat]?.targetAmount) || 0;
+    if (target <= 0) return null;
+    const arr = household.actual.reserve[cat] || zeros();
+    const savedYtd = arr.slice(0, selectedMonth + 1).reduce((a, b) => a + b, 0);
+    const savedBefore = savedYtd - (arr[selectedMonth] || 0);
+    if (savedBefore < target && savedYtd >= target) return { cat, icon: household.categoryIcons?.reserve?.[cat] };
+    return null;
+  }).filter(Boolean);
+
+  // Debts paid down extra this month, via a linked reserve overshooting its target.
+  const debtWins = (household.debts || [])
+    .filter(d => d.linkedCategory?.type === "reserve" && (d.reserveSurplusMode || "add") === "add")
+    .map(d => {
+      const arr = household.actual.reserve[d.linkedCategory.name] || zeros();
+      const payment = nextDebtPaymentTotal(d);
+      const regularMonthly = payment.total / payment.monthsPerPeriod;
+      const extra = (arr[selectedMonth] || 0) - regularMonthly;
+      return extra > 0 ? { name: d.name, icon: d.icon, extra } : null;
+    })
+    .filter(Boolean);
+
+  const incomeThisMonth = sumMonth(household.actual.income, selectedMonth);
+  const priorIncomeAvg = selectedMonth > 0
+    ? Array.from({ length: selectedMonth }, (_, i) => sumMonth(household.actual.income, i)).reduce((a, b) => a + b, 0) / selectedMonth
+    : 0;
+  const incomeWin = priorIncomeAvg > 0 && incomeThisMonth > priorIncomeAvg * 1.1;
+
+  // Pick the single most exciting thing to headline, most specific/exciting first.
+  let headline;
+  if (debtWins.length > 0) {
+    const best = debtWins.sort((a, b) => b.extra - a.extra)[0];
+    headline = `Paying down ${best.icon ? `${best.icon} ` : ""}${best.name} extra this month — nice! 💪`;
+  } else if (goalsReached.length > 0) {
+    const g = goalsReached[0];
+    headline = `You hit your ${g.icon ? `${g.icon} ` : ""}${g.cat} goal this month! 🎉`;
+  } else if (reserveStatus.some(r => r.extra > 0)) {
+    const best = reserveStatus.filter(r => r.extra > 0).sort((a, b) => b.extra - a.extra)[0];
+    headline = `Extra saved for ${best.icon ? `${best.icon} ` : ""}${best.cat} this month!`;
+  } else if (incomeWin) {
+    headline = "A stronger income month than usual — nice going!";
+  } else {
+    headline = "Steady as she goes this month.";
+  }
+
+  // Next payment coming up for each debt with a first-payment date, soonest first.
+  const upcomingDebts = (household.debts || [])
+    .filter(d => d.firstPaymentDate && (Number(d.currentAmount) || 0) > 0)
+    .map(d => {
+      const payment = nextDebtPaymentTotal(d);
+      const dueDate = addMonthsToDateStr(d.firstPaymentDate, (d.paidPeriods || 0) * payment.monthsPerPeriod);
+      return { name: d.name, icon: d.icon, dueDate, amount: payment.total };
+    })
+    .filter(d => d.dueDate)
+    .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+
   return (
     <Card>
-      <h3 style={{ ...fontDisplay, fontSize: 16, margin: "0 0 14px", color: COLORS.ink }}>Year at a glance</h3>
-      <p style={{ ...fontBody, fontSize: 11, color: COLORS.inkSoft, margin: "0 0 10px" }}>
-        "Expenses" includes money moved into reserves — it's no longer free to spend, even before the bill is actually paid.
-      </p>
-      <div style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", ...fontBody, fontSize: 12 }}>
-          <thead>
-            <tr>
-              {rows.map(r => (
-                <th key={r.month} style={{
-                  padding: "4px 6px", color: r.isSelected ? COLORS.primary : COLORS.inkSoft,
-                  fontWeight: r.isSelected ? 800 : 600, textAlign: "center",
-                }}>{r.month}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              {rows.map(r => (
-                <td key={r.month} style={{
-                  padding: "4px 6px", textAlign: "center", opacity: r.isFuture ? 0.35 : 1,
-                  background: r.isSelected ? COLORS.lavender : "transparent", borderRadius: 6,
-                  color: COLORS.success, fontWeight: 600,
-                }}>{r.income > 0 ? fmt(r.income) : "—"}</td>
-              ))}
-            </tr>
-            <tr>
-              {rows.map(r => (
-                <td key={r.month} style={{
-                  padding: "4px 6px", textAlign: "center", opacity: r.isFuture ? 0.35 : 1,
-                  background: r.isSelected ? COLORS.lavender : "transparent",
-                  color: COLORS.alert, fontWeight: 600,
-                }}>{r.expenses > 0 ? fmt(r.expenses) : "—"}</td>
-              ))}
-            </tr>
-            <tr>
-              {rows.map(r => (
-                <td key={r.month} style={{
-                  padding: "4px 6px 8px", textAlign: "center", opacity: r.isFuture ? 0.35 : 1,
-                  background: r.isSelected ? COLORS.lavender : "transparent", borderRadius: 6,
-                  color: COLORS.ink, fontWeight: 800, borderTop: `1px solid ${COLORS.border}`,
-                }}>{(r.income > 0 || r.expenses > 0) ? fmt(r.net) : "—"}</td>
-              ))}
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <div style={{ display: "flex", gap: 14, marginTop: 8, ...fontBody, fontSize: 11, color: COLORS.inkSoft }}>
-        <span style={{ color: COLORS.success, fontWeight: 700 }}>■</span> Income
-        <span style={{ color: COLORS.alert, fontWeight: 700 }}>■</span> Expenses / Reserves
-        <span style={{ color: COLORS.ink, fontWeight: 700 }}>■</span> Net
-      </div>
+      <h3 style={{ ...fontDisplay, fontSize: 16, margin: "0 0 4px", color: COLORS.ink }}>How you're doing</h3>
+      <p style={{ ...fontBody, fontSize: 14, color: COLORS.primary, fontWeight: 700, margin: "0 0 14px" }}>{headline}</p>
+
+      {reserveStatus.length > 0 && (
+        <div style={{ marginBottom: upcomingDebts.length > 0 ? 14 : 0 }}>
+          <p style={{ ...fontBody, fontSize: 11, fontWeight: 700, color: COLORS.inkSoft, margin: "0 0 6px", textTransform: "uppercase", letterSpacing: 0.4 }}>Reserves</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {reserveStatus.map(r => (
+              <div key={r.cat} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, ...fontBody, fontSize: 13 }}>
+                <span style={{ display: "flex", alignItems: "center", gap: 6, color: COLORS.ink, minWidth: 0 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", flexShrink: 0, background: r.onTrack ? COLORS.success : COLORS.gold }} />
+                  {r.icon && <span>{r.icon}</span>}
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.cat}</span>
+                </span>
+                <span style={{ color: COLORS.inkSoft, flexShrink: 0 }}>{fmt(r.thisMonth, 2)} of {fmt(r.suggested, 2)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {upcomingDebts.length > 0 && (
+        <div>
+          <p style={{ ...fontBody, fontSize: 11, fontWeight: 700, color: COLORS.inkSoft, margin: "0 0 6px", textTransform: "uppercase", letterSpacing: 0.4 }}>Next debt payments</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {upcomingDebts.map(d => (
+              <div key={d.name} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, ...fontBody, fontSize: 13 }}>
+                <span style={{ display: "flex", alignItems: "center", gap: 6, color: COLORS.ink, minWidth: 0 }}>
+                  {d.icon && <span>{d.icon}</span>}
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</span>
+                </span>
+                <span style={{ color: COLORS.inkSoft, flexShrink: 0 }}>{formatDate(d.dueDate)} · {fmt(d.amount, 2)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {reserveStatus.length === 0 && upcomingDebts.length === 0 && (
+        <p style={{ ...fontBody, fontSize: 13, color: COLORS.inkSoft, margin: 0 }}>
+          Set a reserve goal or link a debt to see how you're tracking here.
+        </p>
+      )}
     </Card>
   );
 }
@@ -870,7 +946,7 @@ function Dashboard({ household, selectedMonth, setSelectedMonth }) {
       </div>
 
       <div style={{ marginBottom: 20 }}>
-        <YearOverview household={household} selectedMonth={selectedMonth} />
+        <StatusOverview household={household} selectedMonth={selectedMonth} />
       </div>
 
       {noData ? (
@@ -884,7 +960,7 @@ function Dashboard({ household, selectedMonth, setSelectedMonth }) {
       ) : (
         <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
           <Card style={{ flex: 2, minWidth: 340 }}>
-            <h3 style={{ ...fontDisplay, fontSize: 16, margin: "0 0 16px", color: COLORS.ink }}>Income vs Money Out</h3>
+            <h3 style={{ ...fontDisplay, fontSize: 16, margin: "0 0 16px", color: COLORS.ink }}>Year at a glance</h3>
             <ResponsiveContainer width="100%" height={240}>
               <BarChart data={monthlyData}>
                 <CartesianGrid strokeDasharray="3 3" stroke={COLORS.border} vertical={false} />
