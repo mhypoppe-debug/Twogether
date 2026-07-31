@@ -190,6 +190,46 @@ function visibleCategories(household, type, monthIdx) {
   return household.categories[type].filter(c => isCategoryVisible(household, type, c, monthIdx));
 }
 
+// Renames a category everywhere it's used as a key — past months, icons, goals, linked
+// debts, transaction history, all of it — so the change really does apply retroactively
+// instead of just to the category list.
+function renameCategory(h, type, oldName, newName) {
+  const trimmed = (newName || "").trim();
+  if (!trimmed || trimmed === oldName || h.categories[type].includes(trimmed)) return h;
+  const renameKey = (obj) => {
+    if (!obj || !(oldName in obj)) return obj;
+    const { [oldName]: val, ...rest } = obj;
+    return { ...rest, [trimmed]: val };
+  };
+  const next = {
+    ...h,
+    categories: { ...h.categories, [type]: h.categories[type].map(c => c === oldName ? trimmed : c) },
+    budget: { ...h.budget, [type]: renameKey(h.budget[type]) },
+    actual: { ...h.actual, [type]: renameKey(h.actual[type]) },
+    categoryIcons: { ...h.categoryIcons, [type]: renameKey(h.categoryIcons[type]) },
+    categoryAddedMonth: { ...h.categoryAddedMonth, [type]: renameKey(h.categoryAddedMonth[type]) },
+    categoryRemovedMonth: { ...h.categoryRemovedMonth, [type]: renameKey(h.categoryRemovedMonth[type]) },
+    transactions: h.transactions.map(t => t.type === type && t.category === oldName ? { ...t, category: trimmed } : t),
+    debts: (h.debts || []).map(d => d.linkedCategory?.type === type && d.linkedCategory?.name === oldName
+      ? { ...d, linkedCategory: { ...d.linkedCategory, name: trimmed } }
+      : d),
+  };
+  if (type === "reserve") {
+    next.releasedThrough = renameKey(h.releasedThrough);
+    next.releasedAmount = renameKey(h.releasedAmount);
+    next.reserveGoals = renameKey(h.reserveGoals);
+    next.archivedReserves = (h.archivedReserves || []).map(c => c === oldName ? trimmed : c);
+  }
+  if (type === "income") {
+    next.sameEveryMonth = { ...h.sameEveryMonth, income: renameKey(h.sameEveryMonth.income) };
+    next.copyActualFromExpected = { ...h.copyActualFromExpected, income: renameKey(h.copyActualFromExpected.income) };
+  }
+  if (type === "expense") {
+    next.sameEveryMonth = { ...h.sameEveryMonth, expense: renameKey(h.sameEveryMonth.expense) };
+  }
+  return next;
+}
+
 const TODAY = new Date(2026, 6, 14); // fixed "today" for this demo — July 14, 2026
 
 // Months from the viewed month up to (and including) the target month — i.e. how many
@@ -1454,7 +1494,7 @@ function SettleReserveFlow({ savedYtd, onCancel, onSettle }) {
   );
 }
 
-function ReserveGoalCard({ cat, icon, savedYtd, arr, goal, releasedIdx, monthly, selectedMonth, linkedDebt, onGoalChange, onLinkedModeChange, onRelease, onSettle, onDelete }) {
+function ReserveGoalCard({ cat, icon, savedYtd, arr, goal, releasedIdx, monthly, selectedMonth, linkedDebt, onGoalChange, onLinkedModeChange, onRelease, onSettle, onDelete, onRename }) {
   const isReleased = releasedIdx !== null && releasedIdx !== undefined;
   const [settling, setSettling] = useState(false);
   const target = Number(goal?.targetAmount) || 0;
@@ -1486,13 +1526,46 @@ function ReserveGoalCard({ cat, icon, savedYtd, arr, goal, releasedIdx, monthly,
   const pct = target > 0 ? Math.min(100, (savedYtd / target) * 100) : 0;
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [goalOpen, setGoalOpen] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState(cat);
+
+  const saveName = () => {
+    onRename(nameDraft);
+    setEditingName(false);
+  };
 
   return (
     <Card style={{ marginBottom: 16 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-        <h4 style={{ ...fontDisplay, fontSize: 18, margin: 0, color: COLORS.ink, display: "flex", alignItems: "center", gap: 6 }}>
+        <h4 style={{ ...fontDisplay, fontSize: 18, margin: 0, color: COLORS.ink, display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
           <GripVertical size={16} color={COLORS.inkSoft} style={{ cursor: "grab", flexShrink: 0 }} />
-          {icon && <span>{icon} </span>}{cat}
+          {editingName ? (
+            <>
+              <input
+                autoFocus value={nameDraft} onChange={e => setNameDraft(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") saveName(); if (e.key === "Escape") setEditingName(false); }}
+                style={{ ...fontDisplay, fontSize: 16, padding: "3px 8px", borderRadius: 6, border: `1.5px solid ${COLORS.primary}`, outline: "none", width: 160, boxSizing: "border-box" }}
+              />
+              <button onClick={saveName} title="Save" style={{ background: "none", border: "none", cursor: "pointer", color: COLORS.success, display: "flex", flexShrink: 0 }}>
+                <Check size={16} />
+              </button>
+              <button onClick={() => setEditingName(false)} title="Cancel" style={{ background: "none", border: "none", cursor: "pointer", color: COLORS.inkSoft, display: "flex", flexShrink: 0 }}>
+                <X size={16} />
+              </button>
+            </>
+          ) : (
+            <>
+              {icon && <span>{icon} </span>}
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cat}</span>
+              <button
+                onClick={() => { setNameDraft(cat); setEditingName(true); }}
+                title="Rename this reserve"
+                style={{ background: "none", border: "none", cursor: "pointer", color: COLORS.inkSoft, display: "flex", flexShrink: 0 }}
+              >
+                <Pencil size={13} />
+              </button>
+            </>
+          )}
         </h4>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {isReleased && <span style={{ ...fontBody, fontSize: 11, background: COLORS.lavender, color: COLORS.primary, padding: "3px 8px", borderRadius: 12, fontWeight: 700 }}>Paid</span>}
@@ -1720,6 +1793,9 @@ function ReservesView({ household, update, selectedMonth, setSelectedMonth }) {
   };
   const setLinkedDebtMode = (debtId, mode) => {
     update(h => ({ ...h, debts: (h.debts || []).map(d => d.id === debtId ? { ...d, reserveSurplusMode: mode } : d) }));
+  };
+  const renameReserve = (oldName, newName) => {
+    update(h => renameCategory(h, "reserve", oldName, newName));
   };
   const toggleRelease = (cat) => {
     update(h => ({
@@ -2020,6 +2096,7 @@ function ReservesView({ household, update, selectedMonth, setSelectedMonth }) {
                       onRelease={() => toggleRelease(cat)}
                       onSettle={(payload) => settleReserve(cat, payload)}
                       onDelete={() => deleteReserve(cat)}
+                      onRename={(newName) => renameReserve(cat, newName)}
                     />
                   </div>
                 );
@@ -2221,11 +2298,45 @@ function DebtCard({ debt, household, previewExtra = 0, onChange, onDelete }) {
   const years = rows.length > 0 ? Math.floor(rows.length / freq.perYear) : 0;
   const remainder = rows.length > 0 ? rows.length % freq.perYear : 0;
 
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState(debt.name);
+  const saveName = () => {
+    const trimmed = nameDraft.trim();
+    if (trimmed) onChange({ ...debt, name: trimmed });
+    setEditingName(false);
+  };
+
   return (
     <Card style={{ marginBottom: 16 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-        <h4 style={{ ...fontDisplay, fontSize: 18, margin: 0, color: COLORS.ink, display: "flex", alignItems: "center", gap: 6 }}>
-          {debt.icon && <span>{debt.icon} </span>}{debt.name}
+        <h4 style={{ ...fontDisplay, fontSize: 18, margin: 0, color: COLORS.ink, display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+          {editingName ? (
+            <>
+              <input
+                autoFocus value={nameDraft} onChange={e => setNameDraft(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") saveName(); if (e.key === "Escape") setEditingName(false); }}
+                style={{ ...fontDisplay, fontSize: 16, padding: "3px 8px", borderRadius: 6, border: `1.5px solid ${COLORS.primary}`, outline: "none", width: 160, boxSizing: "border-box" }}
+              />
+              <button onClick={saveName} title="Save" style={{ background: "none", border: "none", cursor: "pointer", color: COLORS.success, display: "flex", flexShrink: 0 }}>
+                <Check size={16} />
+              </button>
+              <button onClick={() => setEditingName(false)} title="Cancel" style={{ background: "none", border: "none", cursor: "pointer", color: COLORS.inkSoft, display: "flex", flexShrink: 0 }}>
+                <X size={16} />
+              </button>
+            </>
+          ) : (
+            <>
+              {debt.icon && <span>{debt.icon} </span>}
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{debt.name}</span>
+              <button
+                onClick={() => { setNameDraft(debt.name); setEditingName(true); }}
+                title="Rename this debt"
+                style={{ background: "none", border: "none", cursor: "pointer", color: COLORS.inkSoft, display: "flex", flexShrink: 0 }}
+              >
+                <Pencil size={13} />
+              </button>
+            </>
+          )}
         </h4>
         {confirmingDelete ? (
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
