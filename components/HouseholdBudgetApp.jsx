@@ -37,35 +37,6 @@ const THEMES = [
   { name: "Forest",      primary: "#264D2B", accent: "#4E8A55", gold: "#D8A63D", bg: "#F6FAF6", border: "#DCEBDC", lavender: "#E7F3E7" },
   { name: "Rose",        primary: "#7A1E42", accent: "#C2437A", gold: "#E8A33D", bg: "#FCF6F9", border: "#F3DCE6", lavender: "#F9E7EF" },
   { name: "Midnight",    primary: "#1E2A4A", accent: "#3E5C9A", gold: "#E0A83D", bg: "#F5F6FA", border: "#DCE1EF", lavender: "#E9ECF5" },
-  { name: "Clay",        primary: "#8C3B2E", accent: "#D97D52", gold: "#E3B23C", bg: "#FCF7F2", border: "#F1DDCE", lavender: "#F8E9DD" },
-  { name: "Sage",        primary: "#3D5A4A", accent: "#6FA089", gold: "#D9B25C", bg: "#F6FAF7", border: "#DCEAE3", lavender: "#E8F2EC" },
-  { name: "Berry",       primary: "#5C1A3D", accent: "#A6437A", gold: "#E8A33D", bg: "#FCF5F9", border: "#F0DAE6", lavender: "#F7E5EF" },
-  { name: "Slate",       primary: "#374357", accent: "#6E85A8", gold: "#D8A63D", bg: "#F6F7FA", border: "#DEE3EC", lavender: "#EAEDF4" },
-  { name: "Marigold",    primary: "#8A5A12", accent: "#D9922B", gold: "#EFC94C", bg: "#FCF9F1", border: "#F0E4C8", lavender: "#F8EFD9" },
-  { name: "Teal",        primary: "#0F5757", accent: "#2E9C93", gold: "#E8A33D", bg: "#F4FAF9", border: "#D6ECE9", lavender: "#E3F4F1" },
-];
-
-const FONT_PAIRINGS = [
-  {
-    key: "classic", name: "Classic",
-    display: "'Fraunces', Georgia, serif", body: "'Inter', system-ui, sans-serif",
-    google: "Fraunces:wght@500;600;700&family=Inter:wght@400;500;600;700",
-  },
-  {
-    key: "rounded", name: "Rounded",
-    display: "'Poppins', system-ui, sans-serif", body: "'Nunito Sans', system-ui, sans-serif",
-    google: "Poppins:wght@500;600;700&family=Nunito+Sans:wght@400;500;600;700",
-  },
-  {
-    key: "elegant", name: "Elegant",
-    display: "'Playfair Display', Georgia, serif", body: "'Source Sans 3', system-ui, sans-serif",
-    google: "Playfair+Display:wght@500;600;700&family=Source+Sans+3:wght@400;500;600;700",
-  },
-  {
-    key: "friendly", name: "Friendly",
-    display: "'Quicksand', system-ui, sans-serif", body: "'Karla', system-ui, sans-serif",
-    google: "Quicksand:wght@500;600;700&family=Karla:wght@400;500;600;700",
-  },
 ];
 
 function applyTheme(theme) {
@@ -169,15 +140,8 @@ function formatDate(dateStr) {
   return DATE_FORMAT === "DMY" ? `${dd}/${mm}/${yyyy}` : `${mm}/${dd}/${yyyy}`;
 }
 
-// Mutable, like COLORS: chosen once in onboarding (or changed later in Settings),
-// and every component reads these fresh via `...fontDisplay` / `...fontBody` on render.
 const fontDisplay = { fontFamily: "'Fraunces', Georgia, serif" };
 const fontBody = { fontFamily: "'Inter', system-ui, sans-serif" };
-
-function applyFontPairing(pairing) {
-  fontDisplay.fontFamily = pairing.display;
-  fontBody.fontFamily = pairing.body;
-}
 
 /* ============================================================
    EMPTY STATE FACTORY
@@ -396,31 +360,6 @@ function ThemePicker({ theme, setTheme }) {
   );
 }
 
-function FontPicker({ font, setFont }) {
-  return (
-    <div style={{ marginBottom: 20 }}>
-      <p style={{ ...fontBody, fontSize: 13, color: COLORS.inkSoft, marginBottom: 10, fontWeight: 600 }}>Pick a font pairing</p>
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-        {FONT_PAIRINGS.map(f => (
-          <button
-            key={f.key}
-            onClick={() => setFont(f)}
-            title={f.name}
-            style={{
-              width: 92, padding: "10px 8px", borderRadius: 10, cursor: "pointer", background: "#fff", textAlign: "center",
-              border: font.key === f.key ? `2px solid ${COLORS.primary}` : `1.5px solid ${COLORS.border}`,
-            }}
-          >
-            <div style={{ fontFamily: f.display, fontSize: 20, fontWeight: 600, color: COLORS.ink }}>Aa</div>
-            <div style={{ fontFamily: f.body, fontSize: 11, color: COLORS.inkSoft, marginTop: 4 }}>{f.name}</div>
-          </button>
-        ))}
-      </div>
-      <p style={{ ...fontBody, fontSize: 12, color: COLORS.inkSoft, marginTop: 8 }}>{font.name} — you can change this later in Settings.</p>
-    </div>
-  );
-}
-
 function CurrencyPicker({ currency, setCurrency }) {
   return (
     <div style={{ marginBottom: 20 }}>
@@ -444,7 +383,6 @@ function Onboarding({ onComplete, authError, authBusy }) {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [partners, setPartners] = useState(["", ""]);
   const [theme, setThemeState] = useState(THEMES[0]);
-  const [font, setFontState] = useState(FONT_PAIRINGS[0]);
   const [currency, setCurrencyState] = useState(CURRENCIES[0]);
   const [income, setIncome] = useState([]);
   const [expense, setExpense] = useState([]);
@@ -455,7 +393,6 @@ function Onboarding({ onComplete, authError, authBusy }) {
   // very next render already reflects it — waiting for a separate effect means the
   // change only shows up visually on some *later*, unrelated re-render.
   const setTheme = (t) => { applyTheme(t); PALETTE = paletteFor(t); setThemeState(t); };
-  const setFont = (f) => { applyFontPairing(f); setFontState(f); };
   const setCurrency = (c) => { CURRENCY_SYMBOL = c.symbol; setCurrencyState(c); };
 
   const steps = ["Household", "Income", "Expenses", "Reserves", "Starting balance"];
@@ -472,7 +409,6 @@ function Onboarding({ onComplete, authError, authBusy }) {
     h.name = name.trim();
     h.partners = partners.filter(p => p.trim());
     h.theme = theme;
-    h.fontPairing = font;
     h.currency = currency;
     h.categories = { income, expense, reserve };
     h.startingBalance = Number(startBal) || 0;
@@ -568,7 +504,6 @@ function Onboarding({ onComplete, authError, authBusy }) {
                 </button>
                 <div style={{ marginTop: 16 }}>
                   <ThemePicker theme={theme} setTheme={setTheme} />
-                  <FontPicker font={font} setFont={setFont} />
                   <CurrencyPicker currency={currency} setCurrency={setCurrency} />
                 </div>
               </div>
@@ -3012,14 +2947,10 @@ function CategoriesView({ household, update, sessionPassword, onRename }) {
       </Card>
       <Card style={{ marginBottom: 20 }}>
         <h3 style={{ ...fontDisplay, fontSize: 17, margin: "0 0 4px", color: COLORS.ink }}>Appearance</h3>
-        <p style={{ ...fontBody, fontSize: 13, color: COLORS.inkSoft, margin: "0 0 4px" }}>Change the app's colors and fonts whenever you like.</p>
+        <p style={{ ...fontBody, fontSize: 13, color: COLORS.inkSoft, margin: "0 0 4px" }}>Change the app's colors whenever you like.</p>
         <ThemePicker
           theme={household.theme || THEMES[0]}
           setTheme={(t) => { applyTheme(t); PALETTE = paletteFor(t); update(h => ({ ...h, theme: t })); }}
-        />
-        <FontPicker
-          font={household.fontPairing || FONT_PAIRINGS[0]}
-          setFont={(f) => { applyFontPairing(f); update(h => ({ ...h, fontPairing: f })); }}
         />
         <CurrencyPicker
           currency={household.currency || CURRENCIES[0]}
@@ -3466,10 +3397,6 @@ export default function HouseholdBudgetApp() {
   }, [household?.theme]);
 
   useEffect(() => {
-    applyFontPairing(household?.fontPairing || FONT_PAIRINGS[0]);
-  }, [household?.fontPairing]);
-
-  useEffect(() => {
     if (household?.currency) {
       CURRENCY_SYMBOL = household.currency.symbol;
     }
@@ -3662,13 +3589,10 @@ export default function HouseholdBudgetApp() {
   );
 }
 
-// Loads every font family used by every pairing up front (one stylesheet, once) —
-// simpler and flicker-free compared to swapping stylesheets when the pairing changes.
 function FontLoader() {
   useEffect(() => {
-    const families = FONT_PAIRINGS.map(p => p.google).join("&family=");
     const link = document.createElement("link");
-    link.href = `https://fonts.googleapis.com/css2?family=${families}&display=swap`;
+    link.href = "https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap";
     link.rel = "stylesheet";
     document.head.appendChild(link);
   }, []);
