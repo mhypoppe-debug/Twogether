@@ -799,6 +799,10 @@ function reserveMonthlySuggestion(household, cat, selectedMonth) {
 function StatusOverview({ household, selectedMonth }) {
   const visibleReserve = (household.categories.reserve || []).filter(cat => !(household.archivedReserves || []).includes(cat));
 
+  // A cent or two of "extra" is just rounding noise, not something worth a headline —
+  // require at least a whole unit of overshoot before calling it out.
+  const MEANINGFUL_EXTRA = 1;
+
   const reserveStatus = visibleReserve.map(cat => {
     const arr = household.actual.reserve[cat] || zeros();
     const thisMonth = arr[selectedMonth] || 0;
@@ -830,7 +834,7 @@ function StatusOverview({ household, selectedMonth }) {
       const payment = nextDebtPaymentTotal(d);
       const regularMonthly = payment.total / payment.monthsPerPeriod;
       const extra = (arr[selectedMonth] || 0) - regularMonthly;
-      return extra > 0 ? { name: d.name, icon: d.icon, extra } : null;
+      return extra > MEANINGFUL_EXTRA ? { name: d.name, icon: d.icon, extra } : null;
     })
     .filter(Boolean);
 
@@ -850,8 +854,8 @@ function StatusOverview({ household, selectedMonth }) {
     const g = goalsReached[0];
     const target = Number(household.reserveGoals?.[g.cat]?.targetAmount) || 0;
     positive = `You hit your ${g.icon ? `${g.icon} ` : ""}${g.cat} goal — ${fmt(target, 2)} saved! 🎉`;
-  } else if (reserveStatus.some(r => r.extra > 0)) {
-    const best = reserveStatus.filter(r => r.extra > 0).sort((a, b) => b.extra - a.extra)[0];
+  } else if (reserveStatus.some(r => r.extra > MEANINGFUL_EXTRA)) {
+    const best = reserveStatus.filter(r => r.extra > MEANINGFUL_EXTRA).sort((a, b) => b.extra - a.extra)[0];
     positive = `Extra ${fmt(best.extra, 2)} saved for ${best.icon ? `${best.icon} ` : ""}${best.cat} this month!`;
   } else if (incomeWin) {
     positive = `Income up this month — ${fmt(incomeThisMonth, 2)} vs your usual ${fmt(priorIncomeAvg, 2)}.`;
