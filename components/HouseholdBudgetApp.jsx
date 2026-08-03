@@ -55,7 +55,7 @@ function paletteFor(theme) {
 let PALETTE = ["#8E44AD", "#5B2159", "#E8A33D", "#B983CC", "#2F8F6B", "#D1495B", "#6B4C8A", "#C77DFF"];
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-const DEFAULT_MONTH_IDX = 6; // July, as a sensible starting point
+const DEFAULT_MONTH_IDX = new Date().getMonth(); // open on the current real-world month
 
 const SUGGESTED = {
   income: ["Partner 1 Salary", "Partner 2 Salary", "Bonus", "Investments / Dividends", "Other / Extra"],
