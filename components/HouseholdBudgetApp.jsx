@@ -799,9 +799,9 @@ function reserveMonthlySuggestion(household, cat, selectedMonth) {
 function StatusOverview({ household, selectedMonth }) {
   const visibleReserve = (household.categories.reserve || []).filter(cat => !(household.archivedReserves || []).includes(cat));
 
-  // A cent or two of "extra" is just rounding noise, not something worth a headline —
-  // require at least a whole unit of overshoot before calling it out.
-  const MEANINGFUL_EXTRA = 1;
+  // A small overshoot isn't really worth a headline — require a solid amount of extra
+  // before calling it out.
+  const MEANINGFUL_EXTRA = 500;
 
   const reserveStatus = visibleReserve.map(cat => {
     const arr = household.actual.reserve[cat] || zeros();
