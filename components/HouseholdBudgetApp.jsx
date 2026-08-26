@@ -7,7 +7,8 @@ import {
 import {
   Home, Wallet, PiggyBank, Receipt, ChevronRight, ChevronLeft,
   Plus, X, Check, Users, TrendingUp, TrendingDown, Sparkles, Lock,
-  UserPlus, Pencil, GripVertical, Settings as SettingsIcon, CreditCard, RefreshCw
+  UserPlus, Pencil, GripVertical, Settings as SettingsIcon, CreditCard, RefreshCw,
+  Download, Share
 } from "lucide-react";
 
 /* ============================================================
@@ -2938,6 +2939,80 @@ function ChangeCategoriesPanel({ type, suggestions, household, update, selectedM
   );
 }
 
+function InstallAppCard() {
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [isStandalone, setIsStandalone] = useState(false);
+  const [isIOS, setIsIOS] = useState(false);
+  const [showIosHelp, setShowIosHelp] = useState(false);
+  const [installed, setInstalled] = useState(false);
+
+  useEffect(() => {
+    setIsStandalone(
+      window.matchMedia?.("(display-mode: standalone)").matches || window.navigator.standalone === true
+    );
+    setIsIOS(/iphone|ipad|ipod/i.test(window.navigator.userAgent));
+
+    const onBeforeInstall = (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    const onInstalled = () => setInstalled(true);
+    window.addEventListener("beforeinstallprompt", onBeforeInstall);
+    window.addEventListener("appinstalled", onInstalled);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", onBeforeInstall);
+      window.removeEventListener("appinstalled", onInstalled);
+    };
+  }, []);
+
+  if (isStandalone || installed) return null;
+
+  const install = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    await deferredPrompt.userChoice;
+    setDeferredPrompt(null);
+  };
+
+  return (
+    <Card style={{ marginBottom: 20 }}>
+      <h3 style={{ ...fontDisplay, fontSize: 17, margin: "0 0 4px", color: COLORS.ink, display: "flex", alignItems: "center", gap: 8 }}>
+        <Download size={18} color={COLORS.primary} /> Get the app
+      </h3>
+      <p style={{ ...fontBody, fontSize: 13, color: COLORS.inkSoft, margin: "0 0 12px" }}>
+        Install Twogether on your phone for a proper app icon and a full-screen view, no browser bar.
+      </p>
+
+      {isIOS ? (
+        <>
+          <button
+            onClick={() => setShowIosHelp(o => !o)}
+            style={{ ...fontBody, background: COLORS.primary, color: "#fff", border: "none", borderRadius: 10, padding: "10px 18px", fontWeight: 700, fontSize: 14, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 8 }}
+          >
+            <Download size={16} /> Download the app
+          </button>
+          {showIosHelp && (
+            <p style={{ ...fontBody, fontSize: 12, color: COLORS.inkSoft, margin: "10px 0 0", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+              Tap <Share size={13} style={{ verticalAlign: "middle" }} /> <strong>Share</strong> in Safari's toolbar, then choose <strong>"Add to Home Screen."</strong>
+            </p>
+          )}
+        </>
+      ) : deferredPrompt ? (
+        <button
+          onClick={install}
+          style={{ ...fontBody, background: COLORS.primary, color: "#fff", border: "none", borderRadius: 10, padding: "10px 18px", fontWeight: 700, fontSize: 14, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 8 }}
+        >
+          <Download size={16} /> Download the app
+        </button>
+      ) : (
+        <p style={{ ...fontBody, fontSize: 12, color: COLORS.inkSoft, margin: 0 }}>
+          Open your browser's menu and look for "Install app" or "Add to Home Screen."
+        </p>
+      )}
+    </Card>
+  );
+}
+
 function AccountPanel({ household, sessionPassword, onRename }) {
   const [newId, setNewId] = useState(household.code || "");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -3043,6 +3118,7 @@ function CategoriesView({ household, update, sessionPassword, onRename }) {
     <div className="page-content" style={{ flex: 1 }}>
       <h1 style={{ ...fontDisplay, fontSize: 30, color: COLORS.ink, margin: "0 0 4px" }}>Settings</h1>
       <p style={{ ...fontBody, color: COLORS.inkSoft, margin: "0 0 24px", fontSize: 14 }}>Account, balance, and appearance. Categories are managed from the Income, Expenses, and Reserves pages themselves.</p>
+      <InstallAppCard />
       <AccountPanel household={household} sessionPassword={sessionPassword} onRename={onRename} />
       <Card style={{ marginBottom: 20 }}>
         <h3 style={{ ...fontDisplay, fontSize: 17, margin: "0 0 4px", color: COLORS.ink }}>Starting balance</h3>
