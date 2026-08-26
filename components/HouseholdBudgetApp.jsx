@@ -1309,7 +1309,7 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
   const [chartMode, setChartMode] = useState("month"); // "month" | "ytd"
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState("");
-  const [duplicateWarning, setDuplicateWarning] = useState("");
+  const [duplicateTx, setDuplicateTx] = useState(null); // the existing transaction this scan looks like a repeat of
   const [scannedDate, setScannedDate] = useState(""); // "YYYY-MM-DD" read off the screenshot, if found
 
   // Runs entirely in the browser (Tesseract.js, no server, no API key, no cost) — reads
@@ -1318,7 +1318,7 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
   const scanScreenshot = async (file) => {
     setScanning(true);
     setScanError("");
-    setDuplicateWarning("");
+    setDuplicateTx(null);
     setScannedDate("");
     try {
       const Tesseract = await import("tesseract.js");
@@ -1336,11 +1336,7 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
           const existing = household.transactions.find(t =>
             t.type === "expense" && t.date === foundDate && Math.abs(t.amount - foundAmount) < 0.005
           );
-          if (existing) {
-            setDuplicateWarning(
-              `You already logged ${fmt(existing.amount, 2)}${existing.category ? ` for ${existing.category}` : ""}${existing.note ? ` (${existing.note})` : ""} on ${formatDate(foundDate)} — make sure this isn't the same purchase.`
-            );
-          }
+          if (existing) setDuplicateTx(existing);
         }
       } else {
         setScanError("Couldn't find an amount in that screenshot — enter it by hand.");
@@ -1372,7 +1368,7 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
         debts,
       };
     });
-    setAmount(""); setNote(""); setDuplicateWarning(""); setScannedDate("");
+    setAmount(""); setNote(""); setDuplicateTx(null); setScannedDate("");
   };
 
   const deleteTransaction = (tx) => {
@@ -1482,10 +1478,22 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
           </span>
           {scanError && <span style={{ ...fontBody, fontSize: 12, color: COLORS.alert }}>{scanError}</span>}
         </div>
-        {duplicateWarning && (
-          <p style={{ ...fontBody, fontSize: 12, color: COLORS.gold, fontWeight: 600, background: "#FFF8EA", border: `1px solid ${COLORS.gold}`, borderRadius: 8, padding: "8px 12px", margin: "0 0 10px" }}>
-            ⚠ {duplicateWarning}
-          </p>
+        {duplicateTx && (
+          <div style={{
+            display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap",
+            fontSize: 12, color: COLORS.gold, fontWeight: 600, background: "#FFF8EA", border: `1px solid ${COLORS.gold}`,
+            borderRadius: 8, padding: "8px 12px", margin: "0 0 10px", ...fontBody,
+          }}>
+            <span>
+              ⚠ You already logged {fmt(duplicateTx.amount, 2)}{duplicateTx.category ? ` for ${duplicateTx.category}` : ""}{duplicateTx.note ? ` (${duplicateTx.note})` : ""} on {formatDate(duplicateTx.date)} — make sure this isn't the same purchase.
+            </span>
+            <button
+              onClick={() => { deleteTransaction(duplicateTx); setDuplicateTx(null); }}
+              style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: "#fff", background: COLORS.alert, border: "none", borderRadius: 6, padding: "5px 10px", cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap" }}
+            >
+              Delete that one
+            </button>
+          </div>
         )}
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: household.partners?.length > 0 ? 10 : 0 }}>
           <select value={category} onChange={e => setCategory(e.target.value)} style={{ ...fontBody, padding: "10px 12px", borderRadius: 8, border: `1.5px solid ${COLORS.border}`, fontSize: 14, minWidth: 180 }}>
