@@ -3665,13 +3665,14 @@ export default function HouseholdBudgetApp() {
           minHeight: "100dvh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
           gap: 10, background: COLORS.bg, ...fontBody, color: COLORS.inkSoft,
         }}>
-          <div style={{ position: "relative", width: 200, height: 200 }}>
-            <span style={{ position: "absolute", inset: 0, fontSize: 150, display: "flex", alignItems: "center", justifyContent: "center", animation: "sway 2.4s ease-in-out infinite", transformOrigin: "bottom center" }}>🌳</span>
-            <span style={{ position: "absolute", left: "18%", top: "22%", fontSize: 28, animation: "bob 2.2s ease-in-out infinite .1s" }}>💵</span>
-            <span style={{ position: "absolute", right: "14%", top: "16%", fontSize: 26, animation: "bob 2.2s ease-in-out infinite .5s" }}>💰</span>
-            <span style={{ position: "absolute", left: "8%", top: "44%", fontSize: 24, animation: "bob 2.2s ease-in-out infinite .9s" }}>🪙</span>
-            <span style={{ position: "absolute", right: "6%", top: "42%", fontSize: 28, animation: "bob 2.2s ease-in-out infinite .3s" }}>💵</span>
-            <span style={{ position: "absolute", left: "38%", top: "10%", fontSize: 24, animation: "bob 2.2s ease-in-out infinite .7s" }}>🪙</span>
+          <div style={{ position: "relative", width: 280, height: 280 }}>
+            <span style={{ position: "absolute", inset: 0, fontSize: 210, display: "flex", alignItems: "center", justifyContent: "center", animation: "sway 2.4s ease-in-out infinite", transformOrigin: "bottom center" }}>🌳</span>
+            <span style={{ position: "absolute", left: "18%", top: "20%", fontSize: 34, animation: "bob 2.2s ease-in-out infinite .1s" }}>💵</span>
+            <span style={{ position: "absolute", right: "14%", top: "14%", fontSize: 32, animation: "bob 2.2s ease-in-out infinite .5s" }}>💵</span>
+            <span style={{ position: "absolute", left: "8%", top: "44%", fontSize: 30, animation: "bob 2.2s ease-in-out infinite .9s" }}>💵</span>
+            <span style={{ position: "absolute", right: "6%", top: "42%", fontSize: 34, animation: "bob 2.2s ease-in-out infinite .3s" }}>💵</span>
+            <span style={{ position: "absolute", left: "38%", top: "8%", fontSize: 30, animation: "bob 2.2s ease-in-out infinite .7s" }}>💵</span>
+            <span style={{ position: "absolute", left: "44%", top: "40%", fontSize: 30, animation: "bob 2.2s ease-in-out infinite 1.1s" }}>💵</span>
           </div>
           <span style={{ fontSize: 13, fontWeight: 600 }}>Growing your budget…</span>
           <style>{`
