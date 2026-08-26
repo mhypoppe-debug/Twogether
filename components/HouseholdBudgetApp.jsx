@@ -1348,6 +1348,43 @@ function extractTransactionCandidatesFromOcrLines(lines, referenceDate = new Dat
   return candidates;
 }
 
+// Many bank apps lay a transaction list out in two columns: merchant name + date on the
+// left (often two lines each), and just the amount on the right, lined up per row.
+// Tesseract's layout analysis reads that as separate blocks — every description
+// top-to-bottom, then every amount top-to-bottom — rather than interleaving them row by
+// row, which is why a plain line-by-line walk drops or misattributes rows. Detect a block
+// whose lines are ALL amounts (that's the amount column) and pair amount #i with the i-th
+// group of lines from the other block(s) by position instead.
+function extractTransactionCandidatesFromOcrBlocks(blocks, referenceDate = new Date()) {
+  const blockLineGroups = (blocks || [])
+    .map(b => (b.paragraphs || []).flatMap(p => (p.lines || []).map(l => l.text.trim())).filter(Boolean))
+    .filter(g => g.length > 0);
+
+  const amountBlockIdx = blockLineGroups.findIndex(g => g.length > 1 && g.every(l => OCR_AMOUNT_RE.test(l)));
+
+  if (amountBlockIdx !== -1) {
+    const amountLines = blockLineGroups[amountBlockIdx];
+    const textLines = blockLineGroups.filter((_, i) => i !== amountBlockIdx).flat();
+    const groupSize = Math.max(1, Math.round(textLines.length / amountLines.length) || 1);
+    const candidates = amountLines.map((amtLine, i) => {
+      const match = amtLine.match(OCR_AMOUNT_RE);
+      const amount = match ? parseOcrAmountMatch(match[0]) : null;
+      if (amount == null) return null;
+      const group = textLines.slice(i * groupSize, i * groupSize + groupSize);
+      let date = null;
+      const noteParts = [];
+      group.forEach(l => {
+        const d = extractDateFromOcrText(l, referenceDate);
+        if (d) date = d; else if (/[a-zA-Z]{3,}/.test(l)) noteParts.push(l);
+      });
+      return { amount, note: noteParts.join(" ").trim(), date };
+    }).filter(Boolean);
+    if (candidates.length > 0) return candidates;
+  }
+
+  return extractTransactionCandidatesFromOcrLines(blockLineGroups.flat(), referenceDate);
+}
+
 function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
   const [category, setCategory] = useState("");
   const [amount, setAmount] = useState("");
@@ -1383,9 +1420,7 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
       const worker = await Tesseract.createWorker("eng");
       const { data } = await worker.recognize(file, {}, { text: true, blocks: true });
       await worker.terminate();
-      const lineTexts = [];
-      (data.blocks || []).forEach(b => (b.paragraphs || []).forEach(p => (p.lines || []).forEach(l => lineTexts.push(l.text))));
-      const candidates = extractTransactionCandidatesFromOcrLines(lineTexts);
+      const candidates = extractTransactionCandidatesFromOcrBlocks(data.blocks || []);
 
       if (candidates.length > 1) {
         setScanQueue(candidates.map((c, i) => ({
