@@ -1251,6 +1251,56 @@ function extractNoteFromOcrText(text) {
   return candidate || "";
 }
 
+const OCR_MONTH_NAMES = {
+  jan: 1, january: 1, januari: 1,
+  feb: 2, february: 2, februari: 2,
+  mar: 3, march: 3, maart: 3,
+  apr: 4, april: 4,
+  may: 5, mei: 5,
+  jun: 6, june: 6, juni: 6,
+  jul: 7, july: 7, juli: 7,
+  aug: 8, august: 8, augustus: 8,
+  sep: 9, sept: 9, september: 9,
+  oct: 10, okt: 10, october: 10, oktober: 10,
+  nov: 11, november: 11,
+  dec: 12, december: 12,
+};
+
+// Best-effort date extraction (EN/NL) — "26 augustus 2026", "26/08/2026", ISO, or
+// "today"/"vandaag" & "yesterday"/"gisteren" relative to now. Returns "YYYY-MM-DD" or
+// null if nothing recognizable was found — better to skip the duplicate check than guess.
+function extractDateFromOcrText(text, referenceDate = new Date()) {
+  const lower = text.toLowerCase();
+  if (/\bvandaag\b|\btoday\b/.test(lower)) return referenceDate.toISOString().slice(0, 10);
+  if (/\bgisteren\b|\byesterday\b/.test(lower)) {
+    const d = new Date(referenceDate);
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().slice(0, 10);
+  }
+  let m = text.match(/\b(\d{1,2})\s+([a-zA-Zéû]+)\s+(\d{4})\b/); // "26 augustus 2026"
+  if (m) {
+    const day = Number(m[1]);
+    const month = OCR_MONTH_NAMES[m[2].toLowerCase()];
+    const year = Number(m[3]);
+    if (month && day >= 1 && day <= 31) return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  }
+  m = text.match(/\b([a-zA-Z]+)\s+(\d{1,2}),?\s+(\d{4})\b/); // "Aug 26, 2026"
+  if (m) {
+    const month = OCR_MONTH_NAMES[m[1].toLowerCase()];
+    const day = Number(m[2]);
+    const year = Number(m[3]);
+    if (month && day >= 1 && day <= 31) return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  }
+  m = text.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  m = text.match(/\b(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})\b/); // day-first, European convention
+  if (m) {
+    const day = Number(m[1]), month = Number(m[2]), year = Number(m[3]);
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  }
+  return null;
+}
+
 function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
   const [category, setCategory] = useState("");
   const [amount, setAmount] = useState("");
@@ -1259,19 +1309,42 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
   const [chartMode, setChartMode] = useState("month"); // "month" | "ytd"
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState("");
+  const [duplicateWarning, setDuplicateWarning] = useState("");
+  const [scannedDate, setScannedDate] = useState(""); // "YYYY-MM-DD" read off the screenshot, if found
 
   // Runs entirely in the browser (Tesseract.js, no server, no API key, no cost) — reads
-  // the screenshot's text, pulls out an amount and a rough description, and fills the
-  // form so all that's left is picking the category.
+  // the screenshot's text, pulls out an amount, a date, and a rough description, and
+  // fills the form so all that's left is picking the category.
   const scanScreenshot = async (file) => {
     setScanning(true);
     setScanError("");
+    setDuplicateWarning("");
+    setScannedDate("");
     try {
       const Tesseract = await import("tesseract.js");
       const { data: { text } } = await Tesseract.recognize(file, "eng");
       const foundAmount = extractAmountFromOcrText(text);
-      if (foundAmount != null) setAmount(String(foundAmount));
-      else setScanError("Couldn't find an amount in that screenshot — enter it by hand.");
+      const foundDate = extractDateFromOcrText(text);
+      if (foundAmount != null) {
+        setAmount(String(foundAmount));
+        if (foundDate) {
+          setScannedDate(foundDate);
+          // Same amount AND same date already logged — flag it rather than silently let
+          // a re-scanned or duplicate screenshot get added twice. Two genuine purchases
+          // for the same amount on the same day would normally show up together on one
+          // bank-app screenshot anyway, so this combination is a safe enough signal.
+          const existing = household.transactions.find(t =>
+            t.type === "expense" && t.date === foundDate && Math.abs(t.amount - foundAmount) < 0.005
+          );
+          if (existing) {
+            setDuplicateWarning(
+              `You already logged ${fmt(existing.amount, 2)}${existing.category ? ` for ${existing.category}` : ""}${existing.note ? ` (${existing.note})` : ""} on ${formatDate(foundDate)} — make sure this isn't the same purchase.`
+            );
+          }
+        }
+      } else {
+        setScanError("Couldn't find an amount in that screenshot — enter it by hand.");
+      }
       const foundNote = extractNoteFromOcrText(text);
       if (foundNote) setNote(foundNote);
     } catch (e) {
@@ -1287,7 +1360,7 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
       arr[selectedMonth] += Number(amount);
       const tx = {
         id: Date.now(), month: selectedMonth, type: "expense", category, amount: Number(amount), note, loggedBy: loggedBy || null,
-        date: new Date().toISOString().slice(0, 10),
+        date: scannedDate || new Date().toISOString().slice(0, 10),
       };
       // Logging an expense in a category linked to a debt IS that period's payment —
       // pay it down automatically instead of requiring a separate settle step.
@@ -1299,7 +1372,7 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
         debts,
       };
     });
-    setAmount(""); setNote("");
+    setAmount(""); setNote(""); setDuplicateWarning(""); setScannedDate("");
   };
 
   const deleteTransaction = (tx) => {
@@ -1403,10 +1476,17 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
             />
           </label>
           <span style={{ ...fontBody, fontSize: 11, color: COLORS.inkSoft }}>
-            Fills in the amount & note from a bank-app screenshot — always double-check before adding.
+            {scannedDate
+              ? `Fills in the amount & note, and will log it as ${formatDate(scannedDate)} — always double-check before adding.`
+              : "Fills in the amount & note from a bank-app screenshot — always double-check before adding."}
           </span>
           {scanError && <span style={{ ...fontBody, fontSize: 12, color: COLORS.alert }}>{scanError}</span>}
         </div>
+        {duplicateWarning && (
+          <p style={{ ...fontBody, fontSize: 12, color: COLORS.gold, fontWeight: 600, background: "#FFF8EA", border: `1px solid ${COLORS.gold}`, borderRadius: 8, padding: "8px 12px", margin: "0 0 10px" }}>
+            ⚠ {duplicateWarning}
+          </p>
+        )}
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: household.partners?.length > 0 ? 10 : 0 }}>
           <select value={category} onChange={e => setCategory(e.target.value)} style={{ ...fontBody, padding: "10px 12px", borderRadius: 8, border: `1.5px solid ${COLORS.border}`, fontSize: 14, minWidth: 180 }}>
             <option value="">Select category…</option>
