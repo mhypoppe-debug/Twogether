@@ -1227,14 +1227,22 @@ function initialsOf(name) {
   return parts.length > 1 ? (parts[0][0] + parts[1][0]).toUpperCase() : parts[0].slice(0, 2).toUpperCase();
 }
 
-// Best-effort amount extraction from OCR'd bank-app text: grabs the first currency-shaped
-// number (banking screenshots put the transaction amount right at the top), and works out
-// whether "," or "." is the decimal separator from whichever comes last in the match.
-function extractAmountFromOcrText(text) {
-  const matches = text.match(/-?\s?[€$£]?\s?\d{1,3}(?:[.,]\d{3})*[.,]\d{2}\b/g);
-  if (!matches || matches.length === 0) return null;
-  const raw = matches[0];
+// Shared currency-amount shape, reused everywhere an amount needs to be found or stripped
+// out of OCR'd text so the "what counts as an amount" rule can't drift between call sites.
+// Matches ordinary "45,30" / "45.30" / "1.234,56" style amounts, and also the Dutch banking
+// shorthand for a whole-euro amount, "12,-" (no cents shown at all).
+const OCR_AMOUNT_SOURCE = "-?\\s?[€$£]?\\s?\\d{1,3}(?:[.,]\\d{3})*(?:[.,]\\d{2}\\b|,-(?!\\d))";
+const OCR_AMOUNT_RE = new RegExp(OCR_AMOUNT_SOURCE);
+const OCR_AMOUNT_RE_G = new RegExp(OCR_AMOUNT_SOURCE, "g");
+
+// Works out whether "," or "." is the decimal separator from whichever comes last in the
+// match, and handles the cents-less "12,-" shorthand as a whole-euro amount.
+function parseOcrAmountMatch(raw) {
   const cleaned = raw.replace(/[€$£\s-]/g, "");
+  if (cleaned.endsWith(",") || cleaned.endsWith(".")) {
+    const value = Number(cleaned.slice(0, -1));
+    return isNaN(value) || value <= 0 ? null : value;
+  }
   const decimalIdx = Math.max(cleaned.lastIndexOf(","), cleaned.lastIndexOf("."));
   if (decimalIdx === -1) return null;
   const intPart = cleaned.slice(0, decimalIdx).replace(/[.,]/g, "");
@@ -1243,11 +1251,19 @@ function extractAmountFromOcrText(text) {
   return isNaN(value) || value <= 0 ? null : value;
 }
 
+// Best-effort amount extraction from OCR'd bank-app text: grabs the first currency-shaped
+// number (banking screenshots put the transaction amount right at the top).
+function extractAmountFromOcrText(text) {
+  const matches = text.match(OCR_AMOUNT_RE_G);
+  if (!matches || matches.length === 0) return null;
+  return parseOcrAmountMatch(matches[0]);
+}
+
 // A rough guess at a description: the first line with real words in it (skips lines that
 // are just numbers, dates, or symbols) — always left editable, this is only a head start.
 function extractNoteFromOcrText(text) {
   const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
-  const candidate = lines.find(l => /[a-zA-Z]{3,}/.test(l) && l.length <= 40 && !/\d[.,]\d{2}\b/.test(l));
+  const candidate = lines.find(l => /[a-zA-Z]{3,}/.test(l) && l.length <= 40 && !OCR_AMOUNT_RE.test(l));
   return candidate || "";
 }
 
@@ -1304,10 +1320,12 @@ function extractDateFromOcrText(text, referenceDate = new Date()) {
 // Walks a screenshot line by line so a transaction *list* (several rows, maybe grouped
 // under date headers) yields one candidate per amount found, instead of just the first.
 // A date header line updates "the date in effect" for every row under it until the next
-// one; a line with both a date and an amount uses its own date. Works just as well for a
-// single-transaction screenshot — that just yields a list of one.
+// one; a line with both a date and an amount uses its own date. A single line can also
+// hold more than one amount — Tesseract sometimes merges two visually-close rows (or a
+// running balance) into one line — so every amount on a line becomes its own candidate,
+// sharing that line's leftover text as a note. Works just as well for a single-transaction
+// screenshot — that just yields a list of one.
 function extractTransactionCandidatesFromOcrLines(lines, referenceDate = new Date()) {
-  const AMOUNT_RE = /-?\s?[€$£]?\s?\d{1,3}(?:[.,]\d{3})*[.,]\d{2}\b/;
   let currentDate = null;
   const candidates = [];
   lines.forEach((raw, i) => {
@@ -1315,14 +1333,17 @@ function extractTransactionCandidatesFromOcrLines(lines, referenceDate = new Dat
     if (!line) return;
     const dateHere = extractDateFromOcrText(line, referenceDate);
     if (dateHere) currentDate = dateHere;
-    const amount = extractAmountFromOcrText(line);
-    if (amount == null) return;
-    let note = line.replace(AMOUNT_RE, "").trim();
+    const amountMatches = line.match(OCR_AMOUNT_RE_G);
+    if (!amountMatches) return;
+    let note = line.replace(OCR_AMOUNT_RE_G, "").trim();
     if (note.length < 3) {
       const prev = (lines[i - 1] || "").trim();
-      if (/[a-zA-Z]{3,}/.test(prev) && !AMOUNT_RE.test(prev)) note = prev;
+      if (/[a-zA-Z]{3,}/.test(prev) && !OCR_AMOUNT_RE.test(prev)) note = prev;
     }
-    candidates.push({ amount, note, date: dateHere || currentDate });
+    amountMatches.forEach(raw2 => {
+      const amount = parseOcrAmountMatch(raw2);
+      if (amount != null) candidates.push({ amount, note, date: dateHere || currentDate });
+    });
   });
   return candidates;
 }
