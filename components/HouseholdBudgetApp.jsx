@@ -1355,10 +1355,14 @@ function extractTransactionCandidatesFromOcrLines(lines, referenceDate = new Dat
 // row, which is why a plain line-by-line walk drops or misattributes rows. Detect a block
 // whose lines are ALL amounts (that's the amount column) and pair amount #i with the i-th
 // group of lines from the other block(s) by position instead.
-function extractTransactionCandidatesFromOcrBlocks(blocks, referenceDate = new Date()) {
-  const blockLineGroups = (blocks || [])
+function ocrBlocksToLineGroups(blocks) {
+  return (blocks || [])
     .map(b => (b.paragraphs || []).flatMap(p => (p.lines || []).map(l => l.text.trim())).filter(Boolean))
     .filter(g => g.length > 0);
+}
+
+function extractTransactionCandidatesFromOcrBlocks(blocks, referenceDate = new Date()) {
+  const blockLineGroups = ocrBlocksToLineGroups(blocks);
 
   const amountBlockIdx = blockLineGroups.findIndex(g => g.length > 1 && g.every(l => OCR_AMOUNT_RE.test(l)));
 
@@ -1396,6 +1400,7 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
   const [duplicateTx, setDuplicateTx] = useState(null); // the existing transaction this scan looks like a repeat of
   const [scannedDate, setScannedDate] = useState(""); // "YYYY-MM-DD" read off the screenshot, if found
   const [scanQueue, setScanQueue] = useState([]); // several candidates found on one screenshot, reviewed one by one
+  const [scanDebugText, setScanDebugText] = useState(""); // what the scanner actually read, shown collapsed for troubleshooting
 
   const findDuplicate = (date, amt) => date && household.transactions.find(t =>
     t.type === "expense" && t.date === date && Math.abs(t.amount - amt) < 0.005
@@ -1412,6 +1417,7 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
     setDuplicateTx(null);
     setScannedDate("");
     setScanQueue([]);
+    setScanDebugText("");
     try {
       const Tesseract = await import("tesseract.js");
       // Tesseract.recognize(file, lang) only ever returns { text }. Per-line data lives
@@ -1420,6 +1426,8 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
       const worker = await Tesseract.createWorker("eng");
       const { data } = await worker.recognize(file, {}, { text: true, blocks: true });
       await worker.terminate();
+      const blockLineGroups = ocrBlocksToLineGroups(data.blocks || []);
+      setScanDebugText(blockLineGroups.map((g, i) => `Block ${i + 1}:\n${g.map(l => `  "${l}"`).join("\n")}`).join("\n\n") || data.text || "(nothing recognised)");
       const candidates = extractTransactionCandidatesFromOcrBlocks(data.blocks || []);
 
       if (candidates.length > 1) {
@@ -1601,6 +1609,17 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
           </span>
           {scanError && <span style={{ ...fontBody, fontSize: 12, color: COLORS.alert }}>{scanError}</span>}
         </div>
+        {scanDebugText && (
+          <details style={{ marginBottom: 14 }}>
+            <summary style={{ ...fontBody, fontSize: 11, color: COLORS.inkSoft, cursor: "pointer" }}>What the scanner read (tap to check / share)</summary>
+            <pre style={{
+              ...fontBody, fontSize: 11, color: COLORS.inkSoft, background: COLORS.bg, border: `1px solid ${COLORS.border}`,
+              borderRadius: 8, padding: 10, marginTop: 6, whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 220, overflowY: "auto",
+            }}>
+              {scanDebugText}
+            </pre>
+          </details>
+        )}
         {scanQueue.length > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
             <span style={{ ...fontBody, fontSize: 12, color: COLORS.inkSoft, fontWeight: 600 }}>
