@@ -1356,8 +1356,14 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
     setScanQueue([]);
     try {
       const Tesseract = await import("tesseract.js");
-      const { data } = await Tesseract.recognize(file, "eng");
-      const lineTexts = (data.lines || []).map(l => l.text);
+      // Tesseract.recognize(file, lang) only ever returns { text }. Per-line data lives
+      // under { blocks: true } output, which needs the lower-level worker API instead of
+      // the recognize() shorthand.
+      const worker = await Tesseract.createWorker("eng");
+      const { data } = await worker.recognize(file, {}, { text: true, blocks: true });
+      await worker.terminate();
+      const lineTexts = [];
+      (data.blocks || []).forEach(b => (b.paragraphs || []).forEach(p => (p.lines || []).forEach(l => lineTexts.push(l.text))));
       const candidates = extractTransactionCandidatesFromOcrLines(lineTexts);
 
       if (candidates.length > 1) {
