@@ -3665,14 +3665,18 @@ export default function HouseholdBudgetApp() {
           minHeight: "100dvh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
           gap: 10, background: COLORS.bg, ...fontBody, color: COLORS.inkSoft,
         }}>
-          <div style={{ position: "relative", width: 84, height: 84 }}>
-            <span style={{ position: "absolute", inset: 0, fontSize: 64, display: "flex", alignItems: "center", justifyContent: "center", animation: "sway 2s ease-in-out infinite" }}>🌳</span>
-            <span style={{ position: "absolute", right: -4, top: -2, fontSize: 26, animation: "bob 2s ease-in-out infinite .3s" }}>💵</span>
+          <div style={{ position: "relative", width: 200, height: 200 }}>
+            <span style={{ position: "absolute", inset: 0, fontSize: 150, display: "flex", alignItems: "center", justifyContent: "center", animation: "sway 2.4s ease-in-out infinite", transformOrigin: "bottom center" }}>🌳</span>
+            <span style={{ position: "absolute", left: "18%", top: "22%", fontSize: 28, animation: "bob 2.2s ease-in-out infinite .1s" }}>💵</span>
+            <span style={{ position: "absolute", right: "14%", top: "16%", fontSize: 26, animation: "bob 2.2s ease-in-out infinite .5s" }}>💰</span>
+            <span style={{ position: "absolute", left: "8%", top: "44%", fontSize: 24, animation: "bob 2.2s ease-in-out infinite .9s" }}>🪙</span>
+            <span style={{ position: "absolute", right: "6%", top: "42%", fontSize: 28, animation: "bob 2.2s ease-in-out infinite .3s" }}>💵</span>
+            <span style={{ position: "absolute", left: "38%", top: "10%", fontSize: 24, animation: "bob 2.2s ease-in-out infinite .7s" }}>🪙</span>
           </div>
           <span style={{ fontSize: 13, fontWeight: 600 }}>Growing your budget…</span>
           <style>{`
-            @keyframes sway { 0%, 100% { transform: rotate(-4deg); } 50% { transform: rotate(4deg); } }
-            @keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+            @keyframes sway { 0%, 100% { transform: rotate(-3deg); } 50% { transform: rotate(3deg); } }
+            @keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
           `}</style>
         </div>
       </>
