@@ -1488,10 +1488,10 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
               ⚠ You already logged {fmt(duplicateTx.amount, 2)}{duplicateTx.category ? ` for ${duplicateTx.category}` : ""}{duplicateTx.note ? ` (${duplicateTx.note})` : ""} on {formatDate(duplicateTx.date)} — make sure this isn't the same purchase.
             </span>
             <button
-              onClick={() => { deleteTransaction(duplicateTx); setDuplicateTx(null); }}
+              onClick={() => { setAmount(""); setNote(""); setCategory(""); setScannedDate(""); setDuplicateTx(null); }}
               style={{ ...fontBody, fontSize: 12, fontWeight: 700, color: "#fff", background: COLORS.alert, border: "none", borderRadius: 6, padding: "5px 10px", cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap" }}
             >
-              Delete that one
+              Discard this scan
             </button>
           </div>
         )}
