@@ -1333,9 +1333,27 @@ function extractTransactionCandidatesFromOcrLines(lines, referenceDate = new Dat
     if (!line) return;
     const dateHere = extractDateFromOcrText(line, referenceDate);
     if (dateHere) currentDate = dateHere;
-    const amountMatches = line.match(OCR_AMOUNT_RE_G);
+    let amountMatches = line.match(OCR_AMOUNT_RE_G);
+    let usedBareFallback = false;
+    if (!amountMatches && dateHere) {
+      // OCR sometimes drops the decimal separator entirely (e.g. "13,50" read as "1350"),
+      // most often on a line that's otherwise a clean "date + amount" pair. Only try this
+      // narrow fallback there — a bare number right after a recognised date and a currency
+      // word/symbol, read as whole-euros-and-cents — rather than anywhere in the text.
+      const bare = line.match(/(?:USD|EUR|GBP|[€$£])\s*(\d{3,5})\b/i);
+      if (bare) { amountMatches = [`${bare[1].slice(0, -2)}.${bare[1].slice(-2)}`]; usedBareFallback = true; }
+    }
     if (!amountMatches) return;
-    let note = line.replace(OCR_AMOUNT_RE_G, "").trim();
+    // A line that itself contains the date (e.g. "on 24-08-2026 USD 123,85") is almost
+    // always a metadata line, not a description — the merchant name is on the line above
+    // it, so prefer that. Otherwise (amount and description share one line, no date on
+    // it) strip the amount out of the line itself, same as before.
+    let note = "";
+    if (dateHere) {
+      const prev = (lines[i - 1] || "").trim();
+      if (/[a-zA-Z]{3,}/.test(prev) && !OCR_AMOUNT_RE.test(prev)) note = prev;
+    }
+    if (!note) note = usedBareFallback ? "" : line.replace(OCR_AMOUNT_RE_G, "").trim();
     if (note.length < 3) {
       const prev = (lines[i - 1] || "").trim();
       if (/[a-zA-Z]{3,}/.test(prev) && !OCR_AMOUNT_RE.test(prev)) note = prev;
