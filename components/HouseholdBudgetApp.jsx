@@ -8,7 +8,7 @@ import {
   Home, Wallet, PiggyBank, Receipt, ChevronRight, ChevronLeft,
   Plus, X, Check, Users, TrendingUp, TrendingDown, Sparkles, Lock,
   UserPlus, Pencil, GripVertical, Settings as SettingsIcon, CreditCard, RefreshCw,
-  Download, Share
+  Download, Share, Camera
 } from "lucide-react";
 
 /* ============================================================
@@ -1227,6 +1227,29 @@ function initialsOf(name) {
   return parts.length > 1 ? (parts[0][0] + parts[1][0]).toUpperCase() : parts[0].slice(0, 2).toUpperCase();
 }
 
+// Best-effort amount extraction from OCR'd bank-app text: grabs the first currency-shaped
+// number (banking screenshots put the transaction amount right at the top), and works out
+// whether "," or "." is the decimal separator from whichever comes last in the match.
+function extractAmountFromOcrText(text) {
+  const matches = text.match(/-?\s?[€$£]?\s?\d{1,3}(?:[.,]\d{3})*[.,]\d{2}\b/g);
+  if (!matches || matches.length === 0) return null;
+  const raw = matches[0];
+  const cleaned = raw.replace(/[€$£\s-]/g, "");
+  const decimalIdx = Math.max(cleaned.lastIndexOf(","), cleaned.lastIndexOf("."));
+  if (decimalIdx === -1) return null;
+  const intPart = cleaned.slice(0, decimalIdx).replace(/[.,]/g, "");
+  const decPart = cleaned.slice(decimalIdx + 1);
+  const value = Number(`${intPart}.${decPart}`);
+  return isNaN(value) || value <= 0 ? null : value;
+}
+
+// A rough guess at a description: the first line with real words in it (skips lines that
+// are just numbers, dates, or symbols) — always left editable, this is only a head start.
+function extractNoteFromOcrText(text) {
+  const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
+  const candidate = lines.find(l => /[a-zA-Z]{3,}/.test(l) && l.length <= 40 && !/\d[.,]\d{2}\b/.test(l));
+  return candidate || "";
+}
 
 function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
   const [category, setCategory] = useState("");
@@ -1234,6 +1257,28 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
   const [note, setNote] = useState("");
   const [loggedBy, setLoggedBy] = useState(household.partners?.[0] || "");
   const [chartMode, setChartMode] = useState("month"); // "month" | "ytd"
+  const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState("");
+
+  // Runs entirely in the browser (Tesseract.js, no server, no API key, no cost) — reads
+  // the screenshot's text, pulls out an amount and a rough description, and fills the
+  // form so all that's left is picking the category.
+  const scanScreenshot = async (file) => {
+    setScanning(true);
+    setScanError("");
+    try {
+      const Tesseract = await import("tesseract.js");
+      const { data: { text } } = await Tesseract.recognize(file, "eng");
+      const foundAmount = extractAmountFromOcrText(text);
+      if (foundAmount != null) setAmount(String(foundAmount));
+      else setScanError("Couldn't find an amount in that screenshot — enter it by hand.");
+      const foundNote = extractNoteFromOcrText(text);
+      if (foundNote) setNote(foundNote);
+    } catch (e) {
+      setScanError("Couldn't read that screenshot — enter the details by hand.");
+    }
+    setScanning(false);
+  };
 
   const addTransaction = () => {
     if (!category || !amount) return;
@@ -1343,7 +1388,25 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
       )}
 
       <Card style={{ marginBottom: 20 }}>
-        <h3 style={{ ...fontDisplay, fontSize: 17, margin: "0 0 14px", color: COLORS.ink }}>Log an expense</h3>
+        <h3 style={{ ...fontDisplay, fontSize: 17, margin: "0 0 10px", color: COLORS.ink }}>Log an expense</h3>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
+          <label style={{
+            ...fontBody, display: "inline-flex", alignItems: "center", gap: 6, background: COLORS.lavender, color: COLORS.primary,
+            border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 700,
+            cursor: scanning ? "default" : "pointer", opacity: scanning ? 0.7 : 1,
+          }}>
+            <Camera size={14} />
+            {scanning ? "Reading screenshot…" : "Scan a screenshot"}
+            <input
+              type="file" accept="image/*" disabled={scanning} style={{ display: "none" }}
+              onChange={e => { const f = e.target.files?.[0]; e.target.value = ""; if (f) scanScreenshot(f); }}
+            />
+          </label>
+          <span style={{ ...fontBody, fontSize: 11, color: COLORS.inkSoft }}>
+            Fills in the amount & note from a bank-app screenshot — always double-check before adding.
+          </span>
+          {scanError && <span style={{ ...fontBody, fontSize: 12, color: COLORS.alert }}>{scanError}</span>}
+        </div>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: household.partners?.length > 0 ? 10 : 0 }}>
           <select value={category} onChange={e => setCategory(e.target.value)} style={{ ...fontBody, padding: "10px 12px", borderRadius: 8, border: `1.5px solid ${COLORS.border}`, fontSize: 14, minWidth: 180 }}>
             <option value="">Select category…</option>
