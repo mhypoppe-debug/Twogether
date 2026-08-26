@@ -460,7 +460,7 @@ function Onboarding({ onComplete, authError, authBusy }) {
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: `radial-gradient(circle at 20% 10%, ${COLORS.lavender}, ${COLORS.bg} 60%)`, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+    <div style={{ minHeight: "100dvh", background: `radial-gradient(circle at 20% 10%, ${COLORS.lavender}, ${COLORS.bg} 60%)`, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
       <div style={{ width: "100%", maxWidth: 560 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 24, justifyContent: "center" }}>
           <div style={{ background: COLORS.primary, borderRadius: 12, padding: 10, display: "flex" }}>
@@ -650,7 +650,7 @@ function Sidebar({ view, setView, household, onLogout, saveStatus }) {
   ];
   const statusText = { saving: "Saving…", saved: "✓ Saved", error: "⚠ Save failed" }[saveStatus] || "";
   return (
-    <div className="sidebar" style={{ background: COLORS.primary, minHeight: "100vh", padding: "24px 16px", boxSizing: "border-box", flexShrink: 0, position: "relative" }}>
+    <div className="sidebar" style={{ background: COLORS.primary, minHeight: "100dvh", padding: "24px 16px", boxSizing: "border-box", flexShrink: 0, position: "relative" }}>
       <div className="sidebar-header" style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, paddingLeft: 8 }}>
         <PiggyBank size={20} color="#fff" />
         <span style={{ ...fontDisplay, color: "#fff", fontSize: 18, fontWeight: 600 }}>Twogether</span>
@@ -3404,7 +3404,7 @@ function LandingScreen({ onCreate, onJoin, onImport }) {
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: `radial-gradient(circle at 20% 10%, ${COLORS.lavender}, ${COLORS.bg} 60%)`, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+    <div style={{ minHeight: "100dvh", background: `radial-gradient(circle at 20% 10%, ${COLORS.lavender}, ${COLORS.bg} 60%)`, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
       <div style={{ width: "100%", maxWidth: 440 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 24, justifyContent: "center" }}>
           <div style={{ background: COLORS.primary, borderRadius: 12, padding: 10, display: "flex" }}>
@@ -3661,7 +3661,7 @@ export default function HouseholdBudgetApp() {
       <>
         <FontLoader />
         <ResponsiveStyles />
-        <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: COLORS.bg, ...fontBody, color: COLORS.inkSoft }}>
+        <div style={{ minHeight: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: COLORS.bg, ...fontBody, color: COLORS.inkSoft }}>
           Loading…
         </div>
       </>
@@ -3701,7 +3701,7 @@ export default function HouseholdBudgetApp() {
       <>
         <FontLoader />
         <ResponsiveStyles />
-        <div style={{ minHeight: "100vh", background: `radial-gradient(circle at 20% 10%, ${COLORS.lavender}, ${COLORS.bg} 60%)`, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+        <div style={{ minHeight: "100dvh", background: `radial-gradient(circle at 20% 10%, ${COLORS.lavender}, ${COLORS.bg} 60%)`, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
           <div style={{ width: "100%", maxWidth: 460 }}>
             <Card>
               <h2 style={{ ...fontDisplay, fontSize: 22, margin: "0 0 8px", color: COLORS.ink }}>🎉 Household created!</h2>
@@ -3794,7 +3794,7 @@ function ResponsiveStyles() {
   return (
     <style>{`
       * { box-sizing: border-box; }
-      .app-shell { display: flex; min-height: 100vh; }
+      .app-shell { display: flex; min-height: 100vh; min-height: 100dvh; }
       .sidebar { width: 220px; }
       .sidebar-nav-item { width: 100%; }
       .top-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; padding: 16px 32px; }
@@ -3808,7 +3808,7 @@ function ResponsiveStyles() {
         .app-shell { flex-direction: column; }
         .sidebar {
           width: 100%; min-height: auto !important; position: sticky; top: 0; z-index: 20;
-          padding: 8px 6px !important; order: -1;
+          padding: 8px 6px !important; padding-top: max(8px, env(safe-area-inset-top)) !important; order: -1;
         }
         .sidebar-header, .sidebar-household, .sidebar-footer { display: none; }
         .sidebar-nav { display: flex; flex-direction: row; justify-content: space-around; gap: 2px; }
@@ -3821,7 +3821,7 @@ function ResponsiveStyles() {
         .top-bar { padding: 10px 14px !important; gap: 8px; }
         .top-bar > span { font-size: 12px !important; }
 
-        .page-content { padding: 16px !important; }
+        .page-content { padding: 16px !important; padding-bottom: max(16px, env(safe-area-inset-bottom)) !important; }
         h1 { font-size: 22px !important; }
 
         .kpi-row { gap: 10px; }

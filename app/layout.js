@@ -19,6 +19,8 @@ export const metadata = {
 export const viewport = {
   width: "device-width",
   initialScale: 1,
+  maximumScale: 1,
+  viewportFit: "cover",
   themeColor: "#5B2159",
 };
 
@@ -30,6 +32,7 @@ export default function RootLayout({ children }) {
           href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap"
           rel="stylesheet"
         />
+        <style>{`html, body { height: 100%; margin: 0; }`}</style>
       </head>
       <body style={{ margin: 0 }}>
         {children}
