@@ -1301,6 +1301,32 @@ function extractDateFromOcrText(text, referenceDate = new Date()) {
   return null;
 }
 
+// Walks a screenshot line by line so a transaction *list* (several rows, maybe grouped
+// under date headers) yields one candidate per amount found, instead of just the first.
+// A date header line updates "the date in effect" for every row under it until the next
+// one; a line with both a date and an amount uses its own date. Works just as well for a
+// single-transaction screenshot — that just yields a list of one.
+function extractTransactionCandidatesFromOcrLines(lines, referenceDate = new Date()) {
+  const AMOUNT_RE = /-?\s?[€$£]?\s?\d{1,3}(?:[.,]\d{3})*[.,]\d{2}\b/;
+  let currentDate = null;
+  const candidates = [];
+  lines.forEach((raw, i) => {
+    const line = raw.trim();
+    if (!line) return;
+    const dateHere = extractDateFromOcrText(line, referenceDate);
+    if (dateHere) currentDate = dateHere;
+    const amount = extractAmountFromOcrText(line);
+    if (amount == null) return;
+    let note = line.replace(AMOUNT_RE, "").trim();
+    if (note.length < 3) {
+      const prev = (lines[i - 1] || "").trim();
+      if (/[a-zA-Z]{3,}/.test(prev) && !AMOUNT_RE.test(prev)) note = prev;
+    }
+    candidates.push({ amount, note, date: dateHere || currentDate });
+  });
+  return candidates;
+}
+
 function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
   const [category, setCategory] = useState("");
   const [amount, setAmount] = useState("");
@@ -1311,65 +1337,100 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
   const [scanError, setScanError] = useState("");
   const [duplicateTx, setDuplicateTx] = useState(null); // the existing transaction this scan looks like a repeat of
   const [scannedDate, setScannedDate] = useState(""); // "YYYY-MM-DD" read off the screenshot, if found
+  const [scanQueue, setScanQueue] = useState([]); // several candidates found on one screenshot, reviewed one by one
+
+  const findDuplicate = (date, amt) => date && household.transactions.find(t =>
+    t.type === "expense" && t.date === date && Math.abs(t.amount - amt) < 0.005
+  );
 
   // Runs entirely in the browser (Tesseract.js, no server, no API key, no cost) — reads
   // the screenshot's text, pulls out an amount, a date, and a rough description, and
-  // fills the form so all that's left is picking the category.
+  // fills the form so all that's left is picking the category. When the screenshot is a
+  // list (several rows, like a bank-app transaction history) it queues up every row it
+  // found instead, so each one can be reviewed and categorised individually.
   const scanScreenshot = async (file) => {
     setScanning(true);
     setScanError("");
     setDuplicateTx(null);
     setScannedDate("");
+    setScanQueue([]);
     try {
       const Tesseract = await import("tesseract.js");
-      const { data: { text } } = await Tesseract.recognize(file, "eng");
-      const foundAmount = extractAmountFromOcrText(text);
-      const foundDate = extractDateFromOcrText(text);
-      if (foundAmount != null) {
-        setAmount(String(foundAmount));
-        if (foundDate) {
-          setScannedDate(foundDate);
-          // Same amount AND same date already logged — flag it rather than silently let
-          // a re-scanned or duplicate screenshot get added twice. Two genuine purchases
-          // for the same amount on the same day would normally show up together on one
-          // bank-app screenshot anyway, so this combination is a safe enough signal.
-          const existing = household.transactions.find(t =>
-            t.type === "expense" && t.date === foundDate && Math.abs(t.amount - foundAmount) < 0.005
-          );
-          if (existing) setDuplicateTx(existing);
-        }
+      const { data } = await Tesseract.recognize(file, "eng");
+      const lineTexts = (data.lines || []).map(l => l.text);
+      const candidates = extractTransactionCandidatesFromOcrLines(lineTexts);
+
+      if (candidates.length > 1) {
+        setScanQueue(candidates.map((c, i) => ({
+          id: `${Date.now()}-${i}`, amount: String(c.amount), note: c.note || "", date: c.date || "",
+          category: "", duplicateOf: findDuplicate(c.date, c.amount) || null,
+        })));
       } else {
-        setScanError("Couldn't find an amount in that screenshot — enter it by hand.");
+        // A single row (or nothing recognisable as a list) — the whole-text extraction
+        // is tuned for this case and reads single-transaction screenshots more reliably.
+        const foundAmount = extractAmountFromOcrText(data.text);
+        const foundDate = extractDateFromOcrText(data.text);
+        const foundNote = extractNoteFromOcrText(data.text);
+        if (foundAmount != null) {
+          setAmount(String(foundAmount));
+          if (foundDate) {
+            setScannedDate(foundDate);
+            // Same amount AND same date already logged — flag it rather than silently let
+            // a re-scanned or duplicate screenshot get added twice. Two genuine purchases
+            // for the same amount on the same day would normally show up together on one
+            // bank-app screenshot anyway, so this combination is a safe enough signal.
+            const existing = findDuplicate(foundDate, foundAmount);
+            if (existing) setDuplicateTx(existing);
+          }
+          if (foundNote) setNote(foundNote);
+        } else {
+          setScanError("Couldn't find an amount in that screenshot — enter it by hand.");
+        }
       }
-      const foundNote = extractNoteFromOcrText(text);
-      if (foundNote) setNote(foundNote);
     } catch (e) {
       setScanError("Couldn't read that screenshot — enter the details by hand.");
     }
     setScanning(false);
   };
 
-  const addTransaction = () => {
-    if (!category || !amount) return;
+  // Shared by the manual "Add" button and every per-row "Add" button in the scan queue.
+  const logExpense = (cat, amt, txNote, date) => {
     update(h => {
-      const arr = [...(h.actual.expense[category] || zeros())];
-      arr[selectedMonth] += Number(amount);
+      const arr = [...(h.actual.expense[cat] || zeros())];
+      arr[selectedMonth] += Number(amt);
       const tx = {
-        id: Date.now(), month: selectedMonth, type: "expense", category, amount: Number(amount), note, loggedBy: loggedBy || null,
-        date: scannedDate || new Date().toISOString().slice(0, 10),
+        id: Date.now() + Math.random(), month: selectedMonth, type: "expense", category: cat, amount: Number(amt), note: txNote, loggedBy: loggedBy || null,
+        date: date || new Date().toISOString().slice(0, 10),
       };
       // Logging an expense in a category linked to a debt IS that period's payment —
       // pay it down automatically instead of requiring a separate settle step.
-      const debts = payDownLinkedDebt(h, "expense", category, Number(amount), selectedMonth);
+      const debts = payDownLinkedDebt(h, "expense", cat, Number(amt), selectedMonth);
       return {
         ...h,
-        actual: { ...h.actual, expense: { ...h.actual.expense, [category]: arr } },
+        actual: { ...h.actual, expense: { ...h.actual.expense, [cat]: arr } },
         transactions: [tx, ...h.transactions],
         debts,
       };
     });
+  };
+
+  const addTransaction = () => {
+    if (!category || !amount) return;
+    logExpense(category, amount, note, scannedDate);
     setAmount(""); setNote(""); setDuplicateTx(null); setScannedDate("");
   };
+
+  const updateQueueItem = (id, patch) => setScanQueue(q => q.map(item => item.id === id ? { ...item, ...patch } : item));
+
+  const addQueueItem = (item) => {
+    if (!item.category || !item.amount) return;
+    logExpense(item.category, item.amount, item.note, item.date);
+    setScanQueue(q => q.filter(i => i.id !== item.id));
+  };
+
+  // "Skip" only drops this one row from the queue — a duplicate in a list of five
+  // shouldn't throw away the other four.
+  const skipQueueItem = (id) => setScanQueue(q => q.filter(i => i.id !== id));
 
   const deleteTransaction = (tx) => {
     update(h => {
@@ -1478,6 +1539,48 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
           </span>
           {scanError && <span style={{ ...fontBody, fontSize: 12, color: COLORS.alert }}>{scanError}</span>}
         </div>
+        {scanQueue.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+            <span style={{ ...fontBody, fontSize: 12, color: COLORS.inkSoft, fontWeight: 600 }}>
+              Found {scanQueue.length} transactions — review each one, then add or skip it:
+            </span>
+            {scanQueue.map(item => (
+              <div key={item.id} style={{ display: "flex", flexDirection: "column", gap: 6, background: COLORS.bg, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: 10 }}>
+                {item.duplicateOf && (
+                  <span style={{ ...fontBody, fontSize: 11, color: COLORS.gold, fontWeight: 700 }}>
+                    ⚠ Looks like a duplicate of {fmt(item.duplicateOf.amount, 2)}{item.duplicateOf.note ? ` (${item.duplicateOf.note})` : ""} on {formatDate(item.duplicateOf.date)} — check before adding.
+                  </span>
+                )}
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  <select value={item.category} onChange={e => updateQueueItem(item.id, { category: e.target.value })} style={{ ...fontBody, padding: "8px 10px", borderRadius: 8, border: `1.5px solid ${COLORS.border}`, fontSize: 13, minWidth: 160 }}>
+                    <option value="">Select category…</option>
+                    {visibleExpense.map(c => (
+                      <option key={c} value={c}>{household.categoryIcons?.expense?.[c] ? `${household.categoryIcons.expense[c]} ${c}` : c}</option>
+                    ))}
+                  </select>
+                  <input type="number" onFocus={e => e.target.select()} value={item.amount} onChange={e => updateQueueItem(item.id, { amount: e.target.value })} style={{ ...fontBody, padding: "8px 10px", borderRadius: 8, border: `1.5px solid ${COLORS.border}`, fontSize: 13, width: 100 }} />
+                  <input placeholder="Note" value={item.note} onChange={e => updateQueueItem(item.id, { note: e.target.value })} style={{ ...fontBody, padding: "8px 10px", borderRadius: 8, border: `1.5px solid ${COLORS.border}`, fontSize: 13, flex: 1, minWidth: 120 }} />
+                  {item.date && <span style={{ ...fontBody, fontSize: 11, color: COLORS.inkSoft, whiteSpace: "nowrap" }}>{formatDate(item.date)}</span>}
+                  <button
+                    onClick={() => addQueueItem(item)} disabled={!item.category || !item.amount}
+                    style={{
+                      ...fontBody, background: COLORS.primary, color: "#fff", border: "none", borderRadius: 8, padding: "7px 14px",
+                      fontWeight: 700, cursor: item.category && item.amount ? "pointer" : "default", opacity: item.category && item.amount ? 1 : 0.5, whiteSpace: "nowrap",
+                    }}
+                  >
+                    Add
+                  </button>
+                  <button
+                    onClick={() => skipQueueItem(item.id)}
+                    style={{ ...fontBody, background: "none", color: COLORS.inkSoft, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: "7px 12px", fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}
+                  >
+                    Skip
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
         {duplicateTx && (
           <div style={{
             display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap",
