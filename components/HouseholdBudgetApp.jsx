@@ -1419,6 +1419,7 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
   const [scannedDate, setScannedDate] = useState(""); // "YYYY-MM-DD" read off the screenshot, if found
   const [scanQueue, setScanQueue] = useState([]); // several candidates found on one screenshot, reviewed one by one
   const [scanDebugText, setScanDebugText] = useState(""); // what the scanner actually read, shown collapsed for troubleshooting
+  const [categoryFilter, setCategoryFilter] = useState(""); // "" = all categories
 
   const findDuplicate = (date, amt) => date && household.transactions.find(t =>
     t.type === "expense" && t.date === date && Math.abs(t.amount - amt) < 0.005
@@ -1537,6 +1538,8 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
   };
 
   const expenseTx = household.transactions.filter(t => t.type === "expense" && t.month === selectedMonth);
+  const expenseCategoriesLogged = [...new Set(expenseTx.map(t => t.category))].sort();
+  const filteredExpenseTx = categoryFilter ? expenseTx.filter(t => t.category === categoryFilter) : expenseTx;
   const showInitials = household.preferences?.showPartnerInitials && household.partners?.length > 0;
 
   const visibleExpense = visibleCategories(household, "expense", selectedMonth);
@@ -1719,12 +1722,27 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
       </Card>
 
       <Card>
-        <h3 style={{ ...fontDisplay, fontSize: 16, margin: "0 0 12px", color: COLORS.ink }}>{MONTHS[selectedMonth]} expenses</h3>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
+          <h3 style={{ ...fontDisplay, fontSize: 16, margin: 0, color: COLORS.ink }}>{MONTHS[selectedMonth]} expenses</h3>
+          {expenseCategoriesLogged.length > 1 && (
+            <select
+              value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}
+              style={{ ...fontBody, padding: "6px 10px", borderRadius: 8, border: `1.5px solid ${COLORS.border}`, fontSize: 12, color: COLORS.inkSoft }}
+            >
+              <option value="">All categories</option>
+              {expenseCategoriesLogged.map(c => (
+                <option key={c} value={c}>{household.categoryIcons?.expense?.[c] ? `${household.categoryIcons.expense[c]} ${c}` : c}</option>
+              ))}
+            </select>
+          )}
+        </div>
         {expenseTx.length === 0 ? (
           <p style={{ ...fontBody, fontSize: 13, color: COLORS.inkSoft }}>Nothing logged for {MONTHS[selectedMonth]} yet.</p>
+        ) : filteredExpenseTx.length === 0 ? (
+          <p style={{ ...fontBody, fontSize: 13, color: COLORS.inkSoft }}>Nothing logged for {categoryFilter} in {MONTHS[selectedMonth]}.</p>
         ) : (
           <div>
-            {expenseTx.map(tx => (
+            {filteredExpenseTx.map(tx => (
               <div key={tx.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: `1px solid ${COLORS.border}`, ...fontBody, fontSize: 13 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   {showInitials && tx.loggedBy && (
