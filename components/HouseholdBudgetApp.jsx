@@ -1724,7 +1724,7 @@ function ExpensesView({ household, update, selectedMonth, setSelectedMonth }) {
           <p style={{ ...fontBody, fontSize: 13, color: COLORS.inkSoft }}>Nothing logged for {MONTHS[selectedMonth]} yet.</p>
         ) : (
           <div>
-            {expenseTx.slice(0, 15).map(tx => (
+            {expenseTx.map(tx => (
               <div key={tx.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: `1px solid ${COLORS.border}`, ...fontBody, fontSize: 13 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   {showInitials && tx.loggedBy && (
