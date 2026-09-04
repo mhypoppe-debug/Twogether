@@ -2857,7 +2857,7 @@ function DebtCard({ debt, household, previewExtra = 0, onChange, onDelete }) {
                     </select>
                     <p style={{ ...fontBody, fontSize: 11, color: COLORS.inkSoft, margin: 0 }}>
                       {debt.linkedCategory.type === "reserve"
-                        ? `The suggested monthly amount for that reserve becomes a fixed ${fmt(nextDebtPaymentTotal(debt).total / monthsPerPeriod, 2)}/month (covers principal + interest) — settling it pays down ${debt.name} automatically.`
+                        ? `The suggested monthly amount for that reserve becomes a fixed ${fmt(nextDebtPaymentTotal(debt).total / monthsPerPeriod)}/month (covers principal + interest) — settling it pays down ${debt.name} automatically.`
                         : `Logging an expense in "${debt.linkedCategory.name || "…"}" pays down ${debt.name} automatically, as that period's payment.`}
                     </p>
                   </>
@@ -2907,7 +2907,7 @@ function DebtCard({ debt, household, previewExtra = 0, onChange, onDelete }) {
                 {isReserveLinked && (
                   <p style={{ ...fontBody, fontSize: 11, color: COLORS.primary, margin: "0 0 6px", fontStyle: "italic" }}>
                     {isPreview
-                      ? `You've saved ${fmt(previewExtra, 2)} more than a regular month needs — the first row shows that extra paying down principal early. Settle the reserve to lock it in.`
+                      ? `You've saved ${fmt(previewExtra)} more than a regular month needs — the first row shows that extra paying down principal early. Settle the reserve to lock it in.`
                       : (debt.reserveSurplusMode === "net"
                         ? "The first row's principal isn't editable here — it follows the linked reserve. Extra savings are spread into future months instead of paying this down early (change that on the Reserves page)."
                         : "The first row's principal isn't editable here — it follows the linked reserve, and only changes once a month saves more than its own target.")}
@@ -2944,7 +2944,7 @@ function DebtCard({ debt, household, previewExtra = 0, onChange, onDelete }) {
                           <td style={{ padding: "4px 6px", textAlign: "right" }}>
                             {readOnlyRow ? (
                               <span style={{ ...fontBody, fontSize: 11, fontWeight: 700, color: COLORS.success }} title="Follows the linked reserve — not editable">
-                                {fmt(r.principal, 2)}
+                                {fmt(r.principal)}
                               </span>
                             ) : (
                               <input
